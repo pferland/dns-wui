@@ -24,7 +24,7 @@
     {% else %}
       <a href="/?include_ignored=true{% if filter_type %}&type={{ filter_type }}{% endif %}" class="btn btn-secondary btn-sm" title="Show system default and adblock zones">Show Ignored System Zones</a>
     {% endif %}
-    <button class="btn btn-primary btn-sm" onclick="openModal('createZoneModal')">+ Add Zone</button>
+    <button class="btn btn-primary btn-sm" onclick="openCreateZoneModal()">+ Add Zone</button>
   </div>
 </div>
 
@@ -169,6 +169,17 @@
 
 {% block scripts %}
 <script>
+function openCreateZoneModal() {
+  switchZoneTypeTab('master');
+  document.getElementById('createMasterForm').reset();
+  document.getElementById('createSlaveForm').reset();
+  document.getElementById('newDefaultTtl').value = 3600;
+  document.getElementById('newPrimaryNs').value = "ns1.home.lab.";
+  document.getElementById('newAdminEmail').value = "hostmaster.home.lab.";
+  document.getElementById('newAppendConf').checked = true;
+  openModal('createZoneModal');
+}
+
 function switchZoneTypeTab(type) {
   const masterForm = document.getElementById("createMasterForm");
   const slaveForm = document.getElementById("createSlaveForm");
@@ -276,5 +287,12 @@ async function handleRetransferZone(zoneName, btn) {
     btn.innerText = orig;
   }
 }
+
+document.addEventListener("DOMContentLoaded", () => {
+  const urlParams = new URLSearchParams(window.location.search);
+  if (urlParams.get("open_create") === "true") {
+    openCreateZoneModal();
+  }
+});
 </script>
 {% endblock %}

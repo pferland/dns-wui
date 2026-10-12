@@ -16,52 +16,64 @@ function showToast(message, isError = false) {
   }, 3500);
 }
 
-// Initialize View Mode on Load (Defaults to Table)
-document.addEventListener("DOMContentLoaded", () => {
-  const savedMode = localStorage.getItem("dns_view_mode") || "table";
-  setViewMode(savedMode);
-});
-
-// View Mode Toggle (Cards vs Compact Table)
-function setViewMode(mode) {
-  localStorage.setItem("dns_view_mode", mode);
-  const cardsContainer = document.getElementById("viewCards");
-  const tableContainer = document.getElementById("viewTable");
-  const btnCards = document.getElementById("btnViewCards");
-  const btnTable = document.getElementById("btnViewTable");
-
-  if (mode === "table") {
-    if (cardsContainer) cardsContainer.style.display = "none";
-    if (tableContainer) tableContainer.style.display = "block";
-    if (btnCards) btnCards.classList.remove("btn-primary");
-    if (btnCards) btnCards.classList.add("btn-secondary");
-    if (btnTable) btnTable.classList.remove("btn-secondary");
-    if (btnTable) btnTable.classList.add("btn-primary");
-  } else {
-    if (cardsContainer) cardsContainer.style.display = "grid";
-    if (tableContainer) tableContainer.style.display = "none";
-    if (btnCards) btnCards.classList.remove("btn-secondary");
-    if (btnCards) btnCards.classList.add("btn-primary");
-    if (btnTable) btnTable.classList.remove("btn-primary");
-    if (btnTable) btnTable.classList.add("btn-secondary");
-  }
-}
-
 // Modal Helpers
 function openModal(modalId) {
   const el = document.getElementById(modalId);
-  if (el) el.classList.add("active");
+  if (el) {
+    el.classList.add("active");
+  } else {
+    console.warn("Modal not found in DOM:", modalId);
+  }
 }
 
 function closeModal(modalId) {
   const el = document.getElementById(modalId);
-  if (el) el.classList.remove("active");
+  if (el) {
+    el.classList.remove("active");
+  }
 }
+
+// Global "New Zone" launcher that works across all pages
+function triggerNewZone() {
+  const modal = document.getElementById("createZoneModal");
+  if (modal) {
+    if (typeof openCreateZoneModal === "function") {
+      openCreateZoneModal();
+    } else {
+      openModal("createZoneModal");
+    }
+  } else {
+    window.location.href = "/?open_create=true";
+  }
+}
+
+// Global dismiss listeners for modal backdrops & Escape key
+document.addEventListener("click", (e) => {
+  if (e.target && e.target.classList && e.target.classList.contains("modal-backdrop")) {
+    e.target.classList.remove("active");
+  }
+});
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") {
+    document.querySelectorAll(".modal-backdrop.active").forEach(m => m.classList.remove("active"));
+  }
+});
 
 // Quick Record Filter
 function filterRecords(query) {
   const q = query.toLowerCase().trim();
   const rows = document.querySelectorAll(".record-row");
+  rows.forEach(row => {
+    const text = row.innerText.toLowerCase();
+    row.style.display = text.includes(q) ? "" : "none";
+  });
+}
+
+// Table Filter for Zones
+function filterZonesTable(query) {
+  const q = query.toLowerCase().trim();
+  const rows = document.querySelectorAll(".zone-row");
   rows.forEach(row => {
     const text = row.innerText.toLowerCase();
     row.style.display = text.includes(q) ? "" : "none";
@@ -105,14 +117,6 @@ async function reloadZone(zoneName, btn) {
     btn.disabled = false;
     btn.innerText = orig;
   }
-// Table Filter for Zones
-function filterZonesTable(query) {
-  const q = query.toLowerCase().trim();
-  const rows = document.querySelectorAll(".zone-row");
-  rows.forEach(row => {
-    const text = row.innerText.toLowerCase();
-    row.style.display = text.includes(q) ? "" : "none";
-  });
 }
 
 // Global BIND validation test from topbar
@@ -135,6 +139,3 @@ async function runCheckconfGlobal(btn) {
     btn.innerHTML = orig;
   }
 }
-  const savedMode = localStorage.getItem("dns_view_mode") || "cards";
-  setViewMode(savedMode);
-});
