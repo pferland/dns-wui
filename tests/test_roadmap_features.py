@@ -237,3 +237,26 @@ async def test_roadmap_features():
         assert keys_html.status_code == 200
         assert "API Keys & Automation Tokens" in keys_html.text
 
+        # 18. System Settings API & UI Page
+        settings_get = await client.get("/api/v1/system/settings", headers=headers)
+        assert settings_get.status_code == 200
+        all_s = settings_get.json()["settings"]
+        assert any(s["key"] == "APP_NAME" for s in all_s)
+
+        # Update setting via API
+        settings_update = await client.post(
+            "/api/v1/system/settings",
+            headers=headers,
+            json={"settings": {"APP_NAME": "Custom BIND Manager", "AUTO_PTR_SYNC": False}},
+        )
+        assert settings_update.status_code == 200
+        assert settings.APP_NAME == "Custom BIND Manager"
+        assert settings.AUTO_PTR_SYNC is False
+
+        # Render settings page
+        settings_html = await client.get("/settings", headers=headers)
+        assert settings_html.status_code == 200
+        assert "System & Server Settings" in settings_html.text
+        assert "Custom BIND Manager" in settings_html.text
+
+

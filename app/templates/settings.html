@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+
+{% block title %}System Settings - BIND 9 Manager{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">System & Server Settings</h1>
+    <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.25rem;">
+      Configure all runtime parameters, BIND 9 system paths, binary tools, SOA automation strategies, security options, and SSO settings.
+    </p>
+  </div>
+  <div>
+    <button type="button" class="btn btn-primary" onclick="submitSettingsForm()">&#128190; Save All Settings</button>
+  </div>
+</div>
+
+<form id="settingsForm" onsubmit="handleSettingsSubmit(event)">
+  {% for category, items in categories.items() %}
+  <div style="background: #0d1117; border: 1px solid var(--border-color); border-radius: var(--radius); padding: 1.5rem; margin-bottom: 1.5rem;">
+    <div style="border-bottom: 1px solid var(--border-color); padding-bottom: 0.75rem; margin-bottom: 1.25rem;">
+      <h3 style="font-size: 1.05rem; color: #f8fafc; font-weight: 600;">{{ category }}</h3>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 1.25rem;">
+      {% for item in items %}
+      <div class="form-group" style="margin-bottom: 0;">
+        <label for="setting_{{ item.key }}" style="display: flex; justify-content: space-between; align-items: baseline; font-size: 0.85rem;">
+          <span><code>{{ item.key }}</code></span>
+          <span style="font-size: 0.75rem; color: var(--text-dim);">{{ item.type }}</span>
+        </label>
+        
+        <p style="color: var(--text-muted); font-size: 0.78rem; margin-bottom: 0.4rem;">{{ item.description }}</p>
+
+        {% if item.type == 'bool' %}
+          <div style="display: flex; align-items: center; gap: 0.75rem; margin-top: 0.25rem;">
+            <label class="switch" style="display: inline-flex; align-items: center; cursor: pointer; gap: 0.5rem;">
+              <input type="checkbox" id="setting_{{ item.key }}" name="{{ item.key }}" {% if item.value %}checked{% endif %} style="width: 1.2rem; height: 1.2rem; accent-color: #3b82f6;">
+              <span style="font-size: 0.85rem; color: #cbd5e1;">Enabled</span>
+            </label>
+          </div>
+
+        {% elif item.type == 'choice' %}
+          <select id="setting_{{ item.key }}" name="{{ item.key }}" class="form-control" style="font-size: 0.85rem;">
+            {% for choice in item.choices %}
+              <option value="{{ choice }}" {% if item.value == choice %}selected{% endif %}>{{ choice }}</option>
+            {% endfor %}
+          </select>
+
+        {% elif item.type == 'int' %}
+          <input type="number" id="setting_{{ item.key }}" name="{{ item.key }}" value="{{ item.value }}" class="form-control font-mono" style="font-size: 0.85rem;">
+
+        {% elif item.type == 'list' %}
+          <textarea id="setting_{{ item.key }}" name="{{ item.key }}" rows="3" class="form-control font-mono" style="font-size: 0.82rem;" placeholder="Comma-separated or JSON list">{% if item.value is iterable and item.value is not string %}{{ item.value|join(', ') }}{% else %}{{ item.value }}{% endif %}</textarea>
+
+        {% else %}
+          <input type="text" id="setting_{{ item.key }}" name="{{ item.key }}" value="{{ item.value or '' }}" class="form-control font-mono" style="font-size: 0.85rem;">
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endfor %}
+
+  <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-bottom: 3rem;">
+    <button type="button" class="btn btn-secondary" onclick="window.location.reload()">Discard Changes</button>
+    <button type="submit" class="btn btn-primary" id="btnSaveBottom">&#128190; Save All Settings</button>
+  </div>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function submitSettingsForm() {
+  document.getElementById("settingsForm").requestSubmit();
+}
+
+async function handleSettingsSubmit(e) {
+  e.preventDefault();
+  const form = document.getElementById("settingsForm");
+  const saveBtn = document.getElementById("btnSaveBottom");
+  saveBtn.disabled = true;
+  saveBtn.innerText = "Saving Settings...";
+
+  const payload = {};
+  const inputs = form.querySelectorAll("input, select, textarea");
+
+  inputs.forEach(input => {
+    const key = input.name;
+    if (!key) return;
+
+    if (input.type === "checkbox") {
+      payload[key] = input.checked;
+    } else if (input.type === "number") {
+      payload[key] = parseInt(input.value, 10);
+    } else {
+      payload[key] = input.value;
+    }
+  });
+
+  try {
+    const res = await fetch("/api/v1/system/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ settings: payload }),
+    });
+
+    const data = await res.json();
+    if (res.ok) {
+      showToast(data.message || "Settings updated successfully!");
+      setTimeout(() => window.location.reload(), 1200);
+    } else {
+      showToast(`Error: ${data.detail || "Failed to save settings"}`, true);
+      saveBtn.disabled = false;
+      saveBtn.innerText = "💾 Save All Settings";
+    }
+  } catch (err) {
+    showToast(`Error: ${err.message}`, true);
+    saveBtn.disabled = false;
+    saveBtn.innerText = "💾 Save All Settings";
+  }
+}
+</script>
+{% endblock %}

@@ -1,7 +1,8 @@
 from pathlib import Path
 import shutil
-from typing import Literal
+from typing import Literal, Any
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
 
 
 def detect_bind_conf() -> Path:
@@ -113,5 +114,19 @@ class Settings(BaseSettings):
         self.DATA_DIR.mkdir(parents=True, exist_ok=True)
         self.ZONES_DIR.mkdir(parents=True, exist_ok=True)
 
+    def apply_override(self, key: str, value: Any) -> None:
+        """Dynamically update runtime configuration parameter."""
+        if hasattr(self, key):
+            # Convert paths
+            if key in ("NAMED_CONF", "ZONES_DIR", "DATA_DIR", "OVERRIDE_ZONE_FILE"):
+                if value is not None and str(value).strip():
+                    value = Path(str(value).strip())
+                else:
+                    value = None
+            object.__setattr__(self, key, value)
+            if key == "ZONES_DIR" and self.ZONES_DIR:
+                self.ensure_directories()
+
 
 settings = Settings()
+

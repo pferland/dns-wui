@@ -1,7 +1,9 @@
 import shutil
 from pathlib import Path
+from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+
 from sqlmodel.ext.asyncio.session import AsyncSession
 from app.config import settings
 from app.database import get_session
@@ -185,3 +187,38 @@ async def get_system_analytics(_user: User = Depends(get_current_user)):
             "free_gb": free_disk_gb,
         },
     }
+
+
+@router.get("/settings")
+async def get_system_settings(
+    session: AsyncSession = Depends(get_session),
+    _user: User = Depends(require_role("admin")),
+):
+    """Retrieve all configurable settings, categories, types, and current values."""
+    from app.services.settings_service import get_all_settings_view
+    return {"settings": await get_all_settings_view(session)}
+
+
+class UpdateSettingsRequest(BaseModel):
+    settings: dict[str, Any] = Field(..., description="Key-value mapping of settings to update")
+
+
+@router.post("/settings")
+async def update_system_settings(
+    req: UpdateSettingsRequest,
+    session: AsyncSession = Depends(get_session),
+    user: User = Depends(require_role("admin")),
+):
+    """Update runtime configuration settings and persist them to database."""
+    from app.services.settings_service import save_settings_to_db
+    updated = await save_settings_to_db(session, req.settings)
+
+    await log_audit(
+        session=session,
+        username=user.username,
+        action="UPDATE_SETTINGS",
+        zone_name=None,
+        details=f"Updated settings: {', '.join(updated.keys())}",
+    )
+    return {"message": "Settings updated successfully", "updated": updated}
+

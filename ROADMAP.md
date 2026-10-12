@@ -80,6 +80,10 @@ This document tracks prioritized features and operational capabilities for the B
 - [x] **Automated Server Backups & Disaster Recovery Snapshots**
   - Full archive snapshots (`.tar.gz`) of all zone files and BIND configuration files in `data/backups/`.
   - 1-click archive downloads, full rollbacks, and file deletion.
+- [x] **Full UI System Settings Management**
+  - Dedicated configuration console (`/settings`) allowing operators and admins to view and modify all application settings in real time.
+  - Backed by persistent SQLite storage (`app_settings`), loaded on startup, with hot runtime application.
+  - Granular categorized controls: Server network endpoints, BIND 9 paths, binary executables, SOA auto-strategies, reverse PTR sync, RPZ overrides, authentication modes, TOTP, and OIDC SSO parameters.
 - [x] **Secondary / Replica Zone Management**
   - AXFR/IXFR transfer initiation and monitoring via `rndc retransfer <zone>`.
 - [x] **Role-Based Access Control (RBAC)**
@@ -87,4 +91,5 @@ This document tracks prioritized features and operational capabilities for the B
     - *Super Admin*: Full server configuration, RNDC controls, API keys, raw file editor, user management.
     - *Operator*: Record editing and zone operations on managed zones.
     - *Viewer*: Read-only record search, inspection, and DNS dig queries.
+
 

@@ -36,9 +36,14 @@ BASE_DIR = Path(__file__).resolve().parent
 async def lifespan(app: FastAPI):
     logger.info("Initializing DNS-WUI database and environment...")
     await init_db()
+    from app.database import async_session_maker
+    from app.services.settings_service import load_settings_from_db
+    async with async_session_maker() as session:
+        await load_settings_from_db(session)
     settings.ensure_directories()
     logger.info("DNS-WUI initialized and ready.")
     yield
+
 
 
 app = FastAPI(
@@ -438,4 +443,33 @@ async def api_keys_page(
             "active_page": "api-keys",
         },
     )
+
+
+@app.get("/settings", response_class=HTMLResponse)
+async def settings_page(
+    request: Request,
+    user: User | None = Depends(get_current_user_optional),
+    session: AsyncSession = Depends(get_session),
+):
+    if not user and settings.AUTH_MODE not in ("none",):
+        return RedirectResponse(url="/login")
+
+    from app.services.settings_service import get_all_settings_view
+    all_settings = await get_all_settings_view(session)
+
+    # Group settings by category
+    categories: dict[str, list] = {}
+    for item in all_settings:
+        categories.setdefault(item["category"], []).append(item)
+
+    return templates.TemplateResponse(
+        request=request,
+        name="settings.html",
+        context={
+            "user": user,
+            "active_page": "settings",
+            "categories": categories,
+        },
+    )
+
 
