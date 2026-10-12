@@ -402,3 +402,40 @@ async def system_page(
             "status": status_info,
         },
     )
+
+
+@app.get("/tools", response_class=HTMLResponse)
+async def tools_page(
+    request: Request,
+    user: User | None = Depends(get_current_user_optional),
+):
+    if not user and settings.AUTH_MODE not in ("none",):
+        return RedirectResponse(url="/login")
+
+    return templates.TemplateResponse(
+        request=request,
+        name="tools.html",
+        context={
+            "user": user,
+            "active_page": "tools",
+        },
+    )
+
+
+@app.get("/api-keys", response_class=HTMLResponse)
+async def api_keys_page(
+    request: Request,
+    user: User | None = Depends(get_current_user_optional),
+):
+    if not user and settings.AUTH_MODE not in ("none",):
+        return RedirectResponse(url="/login")
+
+    return templates.TemplateResponse(
+        request=request,
+        name="api_keys.html",
+        context={
+            "user": user,
+            "active_page": "api-keys",
+        },
+    )
+

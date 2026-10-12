@@ -8,7 +8,9 @@
     <a href="/" style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 0.4rem; display: inline-block;">&larr; Back to Zones</a>
     <div style="display: flex; align-items: center; gap: 0.75rem;">
       <h1 class="page-title">{{ zone.origin }}</h1>
-      {% if zone.is_reverse %}
+      {% if zone.zone_type in ('slave', 'secondary') %}
+        <span class="badge" style="background: rgba(168, 85, 247, 0.2); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.3);">SLAVE MIRROR</span>
+      {% elif zone.is_reverse %}
         <span class="badge badge-reverse">REVERSE ZONE</span>
       {% else %}
         <span class="badge badge-forward">FORWARD ZONE</span>
@@ -16,12 +18,40 @@
     </div>
     <p style="color: var(--text-dim); font-size: 0.8rem; font-family: monospace; margin-top: 0.25rem;">{{ zone.file_path }}</p>
   </div>
-  <div style="display: flex; gap: 0.6rem;">
-    <a href="/zones/{{ zone.name }}/raw" class="btn btn-secondary">&#9998; Raw Zone Editor</a>
-    <button class="btn btn-secondary" onclick="reloadZone('{{ zone.name }}', this)">&#8635; RNDC Reload</button>
-    <button class="btn btn-primary" onclick="openAddRecordModal()">+ Add Record</button>
+
+  <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+    <button class="btn btn-secondary btn-sm" onclick="openHealthModal()">&#128065; Health Audit</button>
+    <button class="btn btn-secondary btn-sm" onclick="openRevisionsModal()">&#128392; Revisions & Rollback</button>
+    {% if zone.zone_type not in ('slave', 'secondary') %}
+      <button class="btn btn-secondary btn-sm" onclick="openEmailWizardModal()">&#9993; Email Wizard</button>
+      <button class="btn btn-secondary btn-sm" onclick="openBulkTtlModal()">&#9201; Bulk TTL</button>
+      <button class="btn btn-secondary btn-sm" onclick="openImportModal()">&#8679; Import</button>
+      <div style="position: relative; display: inline-block;">
+        <button class="btn btn-secondary btn-sm" onclick="toggleExportMenu()">&#8681; Export &#9662;</button>
+        <div id="exportDropdown" style="display: none; position: absolute; right: 0; top: 100%; margin-top: 0.25rem; background: #0d1117; border: 1px solid var(--border-color); border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.5); z-index: 50; min-width: 140px;">
+          <a href="/api/v1/zones/{{ zone.name }}/export?format=bind" class="dropdown-item" style="display: block; padding: 0.5rem 0.75rem; color: #f1f5f9; text-decoration: none; font-size: 0.82rem;">RFC 1035 (.zone)</a>
+          <a href="/api/v1/zones/{{ zone.name }}/export?format=json" class="dropdown-item" style="display: block; padding: 0.5rem 0.75rem; color: #f1f5f9; text-decoration: none; font-size: 0.82rem;">JSON Array (.json)</a>
+          <a href="/api/v1/zones/{{ zone.name }}/export?format=csv" class="dropdown-item" style="display: block; padding: 0.5rem 0.75rem; color: #f1f5f9; text-decoration: none; font-size: 0.82rem;">Spreadsheet (.csv)</a>
+        </div>
+      </div>
+      <a href="/zones/{{ zone.name }}/raw" class="btn btn-secondary btn-sm">&#9998; Raw Editor</a>
+      <button class="btn btn-secondary btn-sm" onclick="reloadZone('{{ zone.name }}', this)">&#8635; Reload</button>
+      <button class="btn btn-primary btn-sm" onclick="openAddRecordModal()">+ Add Record</button>
+    {% else %}
+      <button class="btn btn-primary btn-sm" onclick="handleRetransferZoneDetail(this)">&#10515; Sync Now (Retransfer)</button>
+    {% endif %}
   </div>
 </div>
+
+{% if zone.zone_type in ('slave', 'secondary') %}
+<div style="background: rgba(168, 85, 247, 0.1); border: 1px solid rgba(168, 85, 247, 0.3); border-radius: var(--radius); padding: 0.85rem 1.25rem; margin-bottom: 1.25rem; display: flex; justify-content: space-between; align-items: center;">
+  <div>
+    <strong style="color: #c084fc;">Secondary / Slave Mirror:</strong>
+    <span style="color: #e2e8f0; font-size: 0.85rem; margin-left: 0.5rem;">Synchronized from cloud master nameservers: <code>{{ zone.masters|join(', ') if zone.masters else 'Cloud Primaries' }}</code></span>
+  </div>
+  <small style="color: var(--text-dim);">Direct record edits disabled</small>
+</div>
+{% endif %}
 
 <!-- SOA Telemetry Bar -->
 {% if zone.soa %}
@@ -62,8 +92,12 @@
           <td style="color: var(--text-dim); font-family: monospace;">{{ r.ttl }}</td>
           <td><code style="font-family: monospace; color: #a5b4fc; word-break: break-all;">{{ r.rdata }}</code></td>
           <td style="text-align: right;">
-            <button class="btn btn-secondary btn-sm" onclick="openEditRecordModal('{{ r.name }}', '{{ r.rtype }}', {{ r.ttl }}, '{{ r.rdata }}')">&#9998; Edit</button>
-            <button class="btn btn-danger btn-sm" onclick="handleDeleteRecord('{{ r.name }}', '{{ r.rtype }}', '{{ r.rdata }}')">&times;</button>
+            {% if zone.zone_type not in ('slave', 'secondary') %}
+              <button class="btn btn-secondary btn-sm" onclick="openEditRecordModal('{{ r.name }}', '{{ r.rtype }}', {{ r.ttl }}, '{{ r.rdata }}')">&#9998; Edit</button>
+              <button class="btn btn-danger btn-sm" onclick="handleDeleteRecord('{{ r.name }}', '{{ r.rtype }}', '{{ r.rdata }}')">&times;</button>
+            {% else %}
+              <span style="color: var(--text-dim); font-size: 0.75rem;">Mirror Read-Only</span>
+            {% endif %}
           </td>
         </tr>
       {% else %}
@@ -75,7 +109,7 @@
   </table>
 </div>
 
-<!-- Add Record Modal -->
+<!-- Add/Edit Record Modal -->
 <div id="recordModal" class="modal-backdrop">
   <div class="modal-box">
     <div class="modal-header">
@@ -96,7 +130,7 @@
       <div class="form-group" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
         <div>
           <label for="recType">Record Type</label>
-          <select id="recType" required class="form-control" onchange="onRecordTypeChange('recType', 'ptrSyncContainer')">
+          <select id="recType" required class="form-control" onchange="onRecordTypeChanged()">
             <option value="A">A (IPv4 Address)</option>
             <option value="AAAA">AAAA (IPv6 Address)</option>
             <option value="CNAME">CNAME (Alias)</option>
@@ -114,8 +148,8 @@
         </div>
       </div>
 
-      <div class="form-group">
-        <label for="recData">RDATA (Target / IP / Value)</label>
+      <div class="form-group" id="standardDataGroup">
+        <label for="recData" id="recDataLabel">RDATA (Target / IP / Value)</label>
         <input type="text" id="recData" required placeholder="e.g. 192.168.1.100 or 10 mail.home.lab." class="form-control">
       </div>
 
@@ -134,11 +168,209 @@
     </form>
   </div>
 </div>
+
+<!-- Revisions & Rollback Modal -->
+<div id="revisionsModal" class="modal-backdrop">
+  <div class="modal-box" style="max-width: 800px;">
+    <div class="modal-header">
+      <h3 class="modal-title">Zone Version History & 1-Click Rollback</h3>
+      <button class="btn btn-secondary btn-sm" onclick="closeModal('revisionsModal')">&times;</button>
+    </div>
+    <div id="revisionsContent" style="margin-top: 1rem;">
+      <p style="color: var(--text-dim);">Loading revision history...</p>
+    </div>
+    <div id="diffViewContainer" style="display: none; margin-top: 1rem; border-top: 1px solid var(--border-color); padding-top: 1rem;">
+      <h4 style="font-size: 0.9rem; color: #f1f5f9; margin-bottom: 0.5rem;" id="diffTitle">Unified Diff vs Current File</h4>
+      <pre id="diffCode" style="background: #020617; color: #94a3b8; font-family: monospace; font-size: 0.78rem; padding: 0.75rem; border-radius: 6px; max-height: 250px; overflow: auto; white-space: pre-wrap;"></pre>
+      <div style="margin-top: 0.75rem; display: flex; justify-content: flex-end; gap: 0.5rem;">
+        <button class="btn btn-secondary btn-sm" onclick="document.getElementById('diffViewContainer').style.display='none'">Close Diff</button>
+        <button class="btn btn-primary btn-sm" id="btnRollbackDiff" onclick="executeRollback()">Rollback to this Version</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Health Audit Modal -->
+<div id="healthModal" class="modal-backdrop">
+  <div class="modal-box" style="max-width: 650px;">
+    <div class="modal-header">
+      <h3 class="modal-title">Automated Zone Health Report</h3>
+      <button class="btn btn-secondary btn-sm" onclick="closeModal('healthModal')">&times;</button>
+    </div>
+    <div id="healthContent" style="margin-top: 1rem;">
+      <p style="color: var(--text-dim);">Auditing zone records and RFC compliance...</p>
+    </div>
+  </div>
+</div>
+
+<!-- Email Stack Wizard Modal -->
+<div id="emailWizardModal" class="modal-backdrop">
+  <div class="modal-box" style="max-width: 650px;">
+    <div class="modal-header">
+      <h3 class="modal-title">Email Stack Wizard (SPF / DMARC / DKIM)</h3>
+      <button class="btn btn-secondary btn-sm" onclick="closeModal('emailWizardModal')">&times;</button>
+    </div>
+    <div style="display: flex; gap: 0.5rem; margin-top: 1rem; margin-bottom: 1rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.5rem;">
+      <button type="button" class="btn btn-primary btn-sm" id="tabEmailSpf" onclick="switchEmailTab('spf')">SPF Record</button>
+      <button type="button" class="btn btn-secondary btn-sm" id="tabEmailDmarc" onclick="switchEmailTab('dmarc')">DMARC Policy</button>
+      <button type="button" class="btn btn-secondary btn-sm" id="tabEmailDkim" onclick="switchEmailTab('dkim')">DKIM TXT</button>
+    </div>
+
+    <!-- SPF Form -->
+    <div id="emailSpfPanel">
+      <div class="form-group">
+        <label>Email Provider Preset</label>
+        <select id="spfProvider" class="form-control" onchange="updateSpfPreview()">
+          <option value="google">Google Workspace (include:_spf.google.com)</option>
+          <option value="ms365">Microsoft 365 / Exchange (include:spf.protection.outlook.com)</option>
+          <option value="mailgun">Mailgun (include:mailgun.org)</option>
+          <option value="sendgrid">SendGrid (include:sendgrid.net)</option>
+          <option value="custom">Custom Mail Server</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Policy Strictness</label>
+        <select id="spfPolicy" class="form-control" onchange="updateSpfPreview()">
+          <option value="~all">Soft Fail (~all) - Recommended for testing</option>
+          <option value="-all">Hard Fail (-all) - Strict rejection of unauthorized IPs</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Generated Record Value</label>
+        <input type="text" id="spfGenerated" readonly class="form-control font-mono" style="color: #6ee7b7; background: #070a13;">
+      </div>
+      <button class="btn btn-primary" onclick="applySpfRecord()">Apply SPF to Zone</button>
+    </div>
+
+    <!-- DMARC Form -->
+    <div id="emailDmarcPanel" style="display: none;">
+      <div class="form-group">
+        <label>Policy Action (p=)</label>
+        <select id="dmarcPolicy" class="form-control" onchange="updateDmarcPreview()">
+          <option value="none">Monitoring Only (p=none) - Log violations without blocking</option>
+          <option value="quarantine">Quarantine (p=quarantine) - Send failures to spam folder</option>
+          <option value="reject">Reject (p=reject) - Strictly block unauthorized emails</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Reporting Aggregate Email (rua=mailto:...)</label>
+        <input type="email" id="dmarcRua" placeholder="e.g. dmarc-reports@example.com" class="form-control" oninput="updateDmarcPreview()">
+      </div>
+      <div class="form-group">
+        <label>Generated Record Name & Value</label>
+        <input type="text" id="dmarcGenerated" readonly class="form-control font-mono" style="color: #6ee7b7; background: #070a13;">
+      </div>
+      <button class="btn btn-primary" onclick="applyDmarcRecord()">Apply DMARC to Zone</button>
+    </div>
+
+    <!-- DKIM Form -->
+    <div id="emailDkimPanel" style="display: none;">
+      <div class="form-group">
+        <label>Selector Name</label>
+        <input type="text" id="dkimSelector" placeholder="e.g. google, k1, mail" class="form-control font-mono" oninput="updateDkimPreview()">
+      </div>
+      <div class="form-group">
+        <label>Public Key (p=...)</label>
+        <textarea id="dkimKey" rows="3" placeholder="Paste base64 public key" class="form-control font-mono" oninput="updateDkimPreview()"></textarea>
+      </div>
+      <button class="btn btn-primary" onclick="applyDkimRecord()">Apply DKIM to Zone</button>
+    </div>
+  </div>
+</div>
+
+<!-- Bulk TTL Modal -->
+<div id="bulkTtlModal" class="modal-backdrop">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3 class="modal-title">Bulk Update Record TTLs</h3>
+      <button class="btn btn-secondary btn-sm" onclick="closeModal('bulkTtlModal')">&times;</button>
+    </div>
+    <div style="margin: 1rem 0;">
+      <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 1rem;">
+        Modify the Time-To-Live across all records in <code>{{ zone.name }}</code> simultaneously.
+      </p>
+      <div style="display: flex; gap: 0.5rem; margin-bottom: 1rem; flex-wrap: wrap;">
+        <button class="btn btn-secondary btn-sm" onclick="document.getElementById('bulkTtlInput').value=60">60s (Migration)</button>
+        <button class="btn btn-secondary btn-sm" onclick="document.getElementById('bulkTtlInput').value=300">300s (5m)</button>
+        <button class="btn btn-secondary btn-sm" onclick="document.getElementById('bulkTtlInput').value=3600">3600s (1h)</button>
+        <button class="btn btn-secondary btn-sm" onclick="document.getElementById('bulkTtlInput').value=86400">86400s (1d)</button>
+      </div>
+      <div class="form-group">
+        <label for="bulkTtlInput">Target TTL (Seconds)</label>
+        <input type="number" id="bulkTtlInput" required value="3600" min="10" max="604800" class="form-control">
+      </div>
+    </div>
+    <div style="display: flex; justify-content: flex-end; gap: 0.5rem;">
+      <button type="button" class="btn btn-secondary" onclick="closeModal('bulkTtlModal')">Cancel</button>
+      <button type="button" class="btn btn-primary" onclick="handleBulkTtlSubmit()">Apply Bulk TTL</button>
+    </div>
+  </div>
+</div>
+
+<!-- Bulk Import Modal -->
+<div id="importModal" class="modal-backdrop">
+  <div class="modal-box" style="max-width: 650px;">
+    <div class="modal-header">
+      <h3 class="modal-title">Bulk Import Records</h3>
+      <button class="btn btn-secondary btn-sm" onclick="closeModal('importModal')">&times;</button>
+    </div>
+    <form onsubmit="handleImportSubmit(event)">
+      <div class="form-group" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+        <div>
+          <label>Import Format</label>
+          <select id="importFormat" class="form-control">
+            <option value="bind">Standard BIND Text (RFC 1035)</option>
+            <option value="json">JSON Record Set</option>
+            <option value="csv">CSV (name,type,ttl,data)</option>
+          </select>
+        </div>
+        <div>
+          <label>Import Mode</label>
+          <select id="importMode" class="form-control">
+            <option value="append" selected>Append (Add to existing records)</option>
+            <option value="replace">Replace (Overwrite all records)</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label for="importContent">Payload Text</label>
+        <textarea id="importContent" rows="10" required class="form-control font-mono" style="font-size: 0.85rem;" placeholder="Paste record text here..."></textarea>
+      </div>
+      <div style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1rem;">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('importModal')">Cancel</button>
+        <button type="submit" class="btn btn-primary" id="btnSubmitImport">Import Records</button>
+      </div>
+    </form>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
 <script>
 const currentZone = "{{ zone.name }}";
+let activeRollbackId = null;
+
+function toggleExportMenu() {
+  const d = document.getElementById("exportDropdown");
+  d.style.display = d.style.display === "none" ? "block" : "none";
+}
+
+document.addEventListener("click", function(e) {
+  if (!e.target.closest("#exportDropdown") && !e.target.innerText.includes("Export")) {
+    const d = document.getElementById("exportDropdown");
+    if (d) d.style.display = "none";
+  }
+});
+
+function onRecordTypeChanged() {
+  const t = document.getElementById("recType").value;
+  const ptrBox = document.getElementById("ptrSyncContainer");
+  if (t === "A" || t === "AAAA") {
+    ptrBox.style.display = "flex";
+  } else {
+    ptrBox.style.display = "none";
+  }
+}
 
 function openAddRecordModal() {
   document.getElementById("modalTitle").innerText = "Add DNS Record";
@@ -147,7 +379,7 @@ function openAddRecordModal() {
   document.getElementById("recType").value = "A";
   document.getElementById("recTtl").value = "3600";
   document.getElementById("recData").value = "";
-  onRecordTypeChange('recType', 'ptrSyncContainer');
+  onRecordTypeChanged();
   openModal("recordModal");
 }
 
@@ -162,7 +394,7 @@ function openEditRecordModal(name, rtype, ttl, rdata) {
   document.getElementById("recType").value = rtype;
   document.getElementById("recTtl").value = ttl;
   document.getElementById("recData").value = rdata;
-  onRecordTypeChange('recType', 'ptrSyncContainer');
+  onRecordTypeChanged();
   openModal("recordModal");
 }
 
@@ -224,19 +456,13 @@ async function handleRecordSubmit(e) {
 }
 
 async function handleDeleteRecord(name, rtype, rdata) {
-  const syncPtr = confirm(`Delete ${rtype} record "${name}" -> "${rdata}"?\n\nClick OK to proceed.`);
-  if (!syncPtr) return;
+  if (!confirm(`Delete ${rtype} record "${name}" -> "${rdata}"?`)) return;
 
   try {
     const res = await fetch(`/api/v1/zones/${encodeURIComponent(currentZone)}/records`, {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: name,
-        rtype: rtype,
-        rdata: rdata,
-        sync_ptr: true,
-      }),
+      body: JSON.stringify({ name: name, rtype: rtype, rdata: rdata, sync_ptr: true }),
     });
     const data = await res.json();
     if (res.ok) {
@@ -247,6 +473,310 @@ async function handleDeleteRecord(name, rtype, rdata) {
     }
   } catch (err) {
     showToast(`Error: ${err}`, true);
+  }
+}
+
+async function handleRetransferZoneDetail(btn) {
+  btn.disabled = true;
+  btn.innerText = "Retransferring...";
+  try {
+    const res = await fetch(`/api/v1/zones/${encodeURIComponent(currentZone)}/retransfer`, { method: "POST" });
+    const data = await res.json();
+    if (res.ok) {
+      showToast(data.message || "Retransfer triggered!");
+      setTimeout(() => window.location.reload(), 1200);
+    } else {
+      showToast(`Error: ${data.detail}`, true);
+      btn.disabled = false;
+      btn.innerText = "Sync Now (Retransfer)";
+    }
+  } catch (err) {
+    showToast(`Failed: ${err.message}`, true);
+    btn.disabled = false;
+    btn.innerText = "Sync Now (Retransfer)";
+  }
+}
+
+// Revisions & Rollback
+async function openRevisionsModal() {
+  document.getElementById("diffViewContainer").style.display = "none";
+  openModal("revisionsModal");
+  const container = document.getElementById("revisionsContent");
+  container.innerHTML = `<p style="color: var(--text-dim);">Fetching revision history...</p>`;
+
+  try {
+    const res = await fetch(`/api/v1/zones/${encodeURIComponent(currentZone)}/revisions`);
+    const revs = await res.json();
+    if (!revs || revs.length === 0) {
+      container.innerHTML = `<p style="color: var(--text-dim); padding: 1.5rem; text-align: center;">No previous revisions recorded yet for this zone.</p>`;
+      return;
+    }
+
+    container.innerHTML = `
+      <div class="data-table-container">
+        <table class="data-table" style="font-size: 0.85rem;">
+          <thead>
+            <tr>
+              <th>Rev ID</th>
+              <th>Date / Time</th>
+              <th>Serial</th>
+              <th>Author & Comment</th>
+              <th style="text-align: right;">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${revs.map(r => `
+              <tr>
+                <td><strong>#${r.id}</strong></td>
+                <td style="color: var(--text-muted);">${r.created_at.slice(0, 16).replace('T', ' ')}</td>
+                <td><code class="font-mono">${r.serial || 'N/A'}</code></td>
+                <td><span style="color: #60a5fa;">${r.author}</span>: ${r.comment || 'Zone snapshot'}</td>
+                <td style="text-align: right;">
+                  <button class="btn btn-secondary btn-sm" onclick="viewRevisionDiff(${r.id})">Diff</button>
+                  <button class="btn btn-primary btn-sm" onclick="rollbackDirectly(${r.id})">Rollback</button>
+                </td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
+  } catch (err) {
+    container.innerHTML = `<p style="color: var(--danger);">Failed loading revisions: ${err.message}</p>`;
+  }
+}
+
+async function viewRevisionDiff(revId) {
+  activeRollbackId = revId;
+  const diffBox = document.getElementById("diffViewContainer");
+  const diffCode = document.getElementById("diffCode");
+  diffBox.style.display = "block";
+  diffCode.innerText = "Computing unified diff...";
+
+  try {
+    const res = await fetch(`/api/v1/zones/${encodeURIComponent(currentZone)}/revisions/${revId}/diff`);
+    const data = await res.json();
+    diffCode.innerText = data.diff || "(No differences detected)";
+    document.getElementById("diffTitle").innerText = `Unified Diff: Revision #${revId} vs Current File`;
+  } catch (err) {
+    diffCode.innerText = `Diff failed: ${err.message}`;
+  }
+}
+
+async function rollbackDirectly(revId) {
+  if (!confirm(`Are you sure you want to roll back '${currentZone}' to Revision #${revId}? A new incremented SOA serial will be generated.`)) return;
+
+  try {
+    const res = await fetch(`/api/v1/zones/${encodeURIComponent(currentZone)}/rollback/${revId}`, { method: "POST" });
+    const data = await res.json();
+    if (res.ok) {
+      showToast(data.message || "Rollback completed!");
+      setTimeout(() => window.location.reload(), 1200);
+    } else {
+      showToast(`Rollback failed: ${data.detail}`, true);
+    }
+  } catch (err) {
+    showToast(`Error: ${err.message}`, true);
+  }
+}
+
+function executeRollback() {
+  if (activeRollbackId) rollbackDirectly(activeRollbackId);
+}
+
+// Health Audit
+async function openHealthModal() {
+  openModal("healthModal");
+  const container = document.getElementById("healthContent");
+  container.innerHTML = `<p style="color: var(--text-dim);">Running diagnostic health checks...</p>`;
+
+  try {
+    const res = await fetch(`/api/v1/zones/${encodeURIComponent(currentZone)}/health`);
+    const data = await res.json();
+
+    const scoreColor = data.score >= 85 ? "var(--success)" : (data.score >= 60 ? "var(--warning)" : "var(--danger)");
+    let issuesHtml = "";
+
+    if (data.issues && data.issues.length > 0) {
+      issuesHtml = data.issues.map(i => `
+        <div style="background: #020617; border-left: 3px solid ${i.level === 'error' ? 'var(--danger)' : (i.level === 'warning' ? 'var(--warning)' : '#60a5fa')}; padding: 0.75rem; margin-top: 0.5rem; border-radius: 4px;">
+          <div style="display: flex; justify-content: space-between;">
+            <strong style="color: #f1f5f9; font-size: 0.85rem;">[${i.category}] ${i.message}</strong>
+            <span style="font-size: 0.75rem; text-transform: uppercase; color: var(--text-dim);">${i.level}</span>
+          </div>
+          ${i.suggestion ? `<p style="color: #94a3b8; font-size: 0.8rem; margin: 0.25rem 0 0 0;">Suggestion: ${i.suggestion}</p>` : ''}
+        </div>
+      `).join("");
+    } else {
+      issuesHtml = `<p style="color: #6ee7b7; font-size: 0.85rem; margin-top: 1rem;">&#10003; No issues detected. Zone records adhere to best practices.</p>`;
+    }
+
+    container.innerHTML = `
+      <div style="display: flex; align-items: center; gap: 1.25rem; background: #070a13; border: 1px solid var(--border-color); border-radius: 8px; padding: 1rem;">
+        <div style="font-size: 2.2rem; font-weight: 800; color: ${scoreColor}; min-width: 80px; text-align: center;">
+          ${data.score}
+          <div style="font-size: 0.7rem; color: var(--text-dim); font-weight: normal;">OUT OF 100</div>
+        </div>
+        <div>
+          <div style="font-size: 1.05rem; font-weight: 700; color: #f8fafc;">Zone Health: <span style="color: ${scoreColor};">${data.status}</span></div>
+          <div style="color: var(--text-muted); font-size: 0.8rem; margin-top: 0.25rem;">
+            Total Records: <strong>${data.total_records}</strong> &bull; SPF: <strong>${data.has_spf ? 'Yes' : 'No'}</strong> &bull; DMARC: <strong>${data.has_dmarc ? 'Yes' : 'No'}</strong>
+          </div>
+        </div>
+      </div>
+      <div style="margin-top: 1.25rem;">
+        <h4 style="font-size: 0.85rem; color: var(--text-dim); text-transform: uppercase;">Diagnostic Findings & Recommendations</h4>
+        ${issuesHtml}
+      </div>
+    `;
+  } catch (err) {
+    container.innerHTML = `<p style="color: var(--danger);">Failed running health check: ${err.message}</p>`;
+  }
+}
+
+// Email Stack Wizard
+function openEmailWizardModal() {
+  updateSpfPreview();
+  updateDmarcPreview();
+  openModal("emailWizardModal");
+}
+
+function switchEmailTab(tab) {
+  document.getElementById("emailSpfPanel").style.display = tab === "spf" ? "block" : "none";
+  document.getElementById("emailDmarcPanel").style.display = tab === "dmarc" ? "block" : "none";
+  document.getElementById("emailDkimPanel").style.display = tab === "dkim" ? "block" : "none";
+
+  document.getElementById("tabEmailSpf").className = tab === "spf" ? "btn btn-primary btn-sm" : "btn btn-secondary btn-sm";
+  document.getElementById("tabEmailDmarc").className = tab === "dmarc" ? "btn btn-primary btn-sm" : "btn btn-secondary btn-sm";
+  document.getElementById("tabEmailDkim").className = tab === "dkim" ? "btn btn-primary btn-sm" : "btn btn-secondary btn-sm";
+}
+
+function updateSpfPreview() {
+  const p = document.getElementById("spfProvider").value;
+  const policy = document.getElementById("spfPolicy").value;
+  let inc = "";
+  if (p === "google") inc = "include:_spf.google.com";
+  else if (p === "ms365") inc = "include:spf.protection.outlook.com";
+  else if (p === "mailgun") inc = "include:mailgun.org";
+  else if (p === "sendgrid") inc = "include:sendgrid.net";
+  else inc = "mx";
+
+  document.getElementById("spfGenerated").value = `"v=spf1 ${inc} ${policy}"`;
+}
+
+async function applySpfRecord() {
+  const val = document.getElementById("spfGenerated").value;
+  await addWizardRecord("@", "TXT", val, "SPF record configured");
+}
+
+function updateDmarcPreview() {
+  const pol = document.getElementById("dmarcPolicy").value;
+  const rua = document.getElementById("dmarcRua").value.trim();
+  let text = `v=DMARC1; p=${pol};`;
+  if (rua) text += ` rua=mailto:${rua};`;
+  document.getElementById("dmarcGenerated").value = `"${text}"`;
+}
+
+async function applyDmarcRecord() {
+  const val = document.getElementById("dmarcGenerated").value;
+  await addWizardRecord("_dmarc", "TXT", val, "DMARC policy record configured");
+}
+
+function updateDkimPreview() {
+  const sel = document.getElementById("dkimSelector").value.trim();
+  const key = document.getElementById("dkimKey").value.trim();
+}
+
+async function applyDkimRecord() {
+  const sel = document.getElementById("dkimSelector").value.trim();
+  const key = document.getElementById("dkimKey").value.trim();
+  if (!sel || !key) {
+    showToast("Please provide both selector name and public key", true);
+    return;
+  }
+  const fqdn = `${sel}._domainkey`;
+  const val = `"v=DKIM1; k=rsa; p=${key}"`;
+  await addWizardRecord(fqdn, "TXT", val, "DKIM key configured");
+}
+
+async function addWizardRecord(name, type, rdata, successMsg) {
+  try {
+    const res = await fetch(`/api/v1/zones/${encodeURIComponent(currentZone)}/records`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: name, rtype: type, ttl: 3600, rdata: rdata, sync_ptr: false }),
+    });
+    if (res.ok) {
+      showToast(successMsg);
+      setTimeout(() => window.location.reload(), 1000);
+    } else {
+      const err = await res.json();
+      showToast(`Error: ${err.detail}`, true);
+    }
+  } catch (err) {
+    showToast(`Failed: ${err.message}`, true);
+  }
+}
+
+// Bulk TTL
+function openBulkTtlModal() {
+  openModal("bulkTtlModal");
+}
+
+async function handleBulkTtlSubmit() {
+  const ttl = parseInt(document.getElementById("bulkTtlInput").value, 10);
+  try {
+    const res = await fetch(`/api/v1/zones/${encodeURIComponent(currentZone)}/bulk-ttl`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ttl: ttl }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      showToast(data.message || `Bulk TTL updated to ${ttl}s!`);
+      setTimeout(() => window.location.reload(), 1000);
+    } else {
+      showToast(`Error: ${data.detail}`, true);
+    }
+  } catch (err) {
+    showToast(`Failed: ${err.message}`, true);
+  }
+}
+
+// Bulk Import
+function openImportModal() {
+  openModal("importModal");
+}
+
+async function handleImportSubmit(e) {
+  e.preventDefault();
+  const btn = document.getElementById("btnSubmitImport");
+  btn.disabled = true;
+  btn.innerText = "Importing...";
+
+  const fmt = document.getElementById("importFormat").value;
+  const mode = document.getElementById("importMode").value;
+  const content = document.getElementById("importContent").value;
+
+  try {
+    const res = await fetch(`/api/v1/zones/${encodeURIComponent(currentZone)}/import`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content: content, format: fmt, mode: mode }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      showToast(data.message || "Import successful!");
+      setTimeout(() => window.location.reload(), 1000);
+    } else {
+      showToast(`Error: ${data.detail}`, true);
+      btn.disabled = false;
+      btn.innerText = "Import Records";
+    }
+  } catch (err) {
+    showToast(`Error: ${err.message}`, true);
+    btn.disabled = false;
+    btn.innerText = "Import Records";
   }
 }
 </script>

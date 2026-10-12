@@ -1,20 +1,76 @@
 {% extends "base.html" %}
 
-{% block title %}System & Diagnostics - BIND 9 Manager{% endblock %}
+{% block title %}System & Operations - BIND 9 Manager{% endblock %}
 
 {% block content %}
 <div class="page-header">
   <div>
-    <h1 class="page-title">System & BIND 9 Diagnostics</h1>
+    <h1 class="page-title">System & BIND 9 Operations</h1>
     <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.25rem;">
-      Environment details and binary path validation on <code>{{ status.named_conf_path }}</code>.
+      Operational controls, RNDC server commands, RPZ ad-blocking telemetry, and binary path validation.
     </p>
   </div>
   <div>
-    <button class="btn btn-primary" onclick="runCheckconf(this)">&#9881; Test named.conf Syntax</button>
+    <button class="btn btn-primary btn-sm" onclick="runCheckconf(this)">&#9881; Test named.conf Syntax</button>
   </div>
 </div>
 
+<!-- Telemetry & Analytics Cards -->
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
+  <div style="background: #0d1117; border: 1px solid var(--border-color); border-radius: var(--radius); padding: 1.1rem;">
+    <div style="color: var(--text-dim); font-size: 0.75rem; text-transform: uppercase; font-weight: 600;">Ad-Block Rules (RPZ)</div>
+    <div style="font-size: 1.6rem; font-weight: 700; color: #38bdf8; margin-top: 0.25rem;" id="adblockRulesCount">--</div>
+    <div style="color: var(--text-muted); font-size: 0.75rem; margin-top: 0.25rem;" id="adblockSize">Calculating size...</div>
+  </div>
+
+  <div style="background: #0d1117; border: 1px solid var(--border-color); border-radius: var(--radius); padding: 1.1rem;">
+    <div style="color: var(--text-dim); font-size: 0.75rem; text-transform: uppercase; font-weight: 600;">Split-Horizon Overrides</div>
+    <div style="font-size: 1.6rem; font-weight: 700; color: #a78bfa; margin-top: 0.25rem;" id="localOverridesCount">--</div>
+    <div style="color: var(--text-muted); font-size: 0.75rem; margin-top: 0.25rem;">Active RPZ LAN intercepts</div>
+  </div>
+
+  <div style="background: #0d1117; border: 1px solid var(--border-color); border-radius: var(--radius); padding: 1.1rem;">
+    <div style="color: var(--text-dim); font-size: 0.75rem; text-transform: uppercase; font-weight: 600;">Total Active Zones</div>
+    <div style="font-size: 1.6rem; font-weight: 700; color: #34d399; margin-top: 0.25rem;">{{ status.total_zones or 0 }}</div>
+    <div style="color: var(--text-muted); font-size: 0.75rem; margin-top: 0.25rem;">Forward & reverse authoritatives</div>
+  </div>
+
+  <div style="background: #0d1117; border: 1px solid var(--border-color); border-radius: var(--radius); padding: 1.1rem;">
+    <div style="color: var(--text-dim); font-size: 0.75rem; text-transform: uppercase; font-weight: 600;">Zone Disk Storage</div>
+    <div style="font-size: 1.6rem; font-weight: 700; color: #f59e0b; margin-top: 0.25rem;" id="diskUsage">-- GB</div>
+    <div style="color: var(--text-muted); font-size: 0.75rem; margin-top: 0.25rem;" id="diskFree">-- GB free space</div>
+  </div>
+</div>
+
+<!-- RNDC Operational Controls Panel -->
+<div style="background: #0d1117; border: 1px solid var(--border-color); border-radius: var(--radius); padding: 1.25rem; margin-bottom: 1.5rem;">
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+    <div>
+      <h3 style="font-size: 1rem; color: #f8fafc; margin-bottom: 0.2rem;">RNDC Operational Controls</h3>
+      <p style="color: var(--text-dim); font-size: 0.8rem;">Direct control commands against the local BIND 9 daemon socket (<code>127.0.0.1:953</code>).</p>
+    </div>
+  </div>
+
+  <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+    <button class="btn btn-secondary btn-sm" onclick="runRndcAction('/api/v1/system/rndc/flush', 'Flush Resolver Cache')">
+      &#128465; Flush Resolver Cache
+    </button>
+    <button class="btn btn-secondary btn-sm" onclick="openFlushnameModal()">
+      &#128465; Flush Domain Cache...
+    </button>
+    <button class="btn btn-secondary btn-sm" onclick="runRndcAction('/api/v1/system/rndc/reconfig', 'Reconfig BIND (Reload New Zones)')">
+      &#8635; RNDC Reconfig
+    </button>
+    <button class="btn btn-secondary btn-sm" onclick="showRndcStatus()">
+      &#128269; View Daemon Status
+    </button>
+    <button class="btn btn-secondary btn-sm" onclick="runRndcAction('/api/v1/system/rndc/dumpdb', 'Dump Cache Database')">
+      &#128190; Dump Cache DB
+    </button>
+  </div>
+</div>
+
+<!-- Diagnostics Table -->
 <div class="data-table-container">
   <table class="data-table">
     <thead>
@@ -74,7 +130,7 @@
         <td><code class="font-mono">{{ status.rndc_bin or 'None' }}</code></td>
         <td>
           {% if status.rndc_bin %}
-            <span style="color: var(--success); font-weight: 600;">&#10003; Local 127.0.0.1:953 Connected</span>
+            <span style="color: var(--success); font-weight: 600;">&#10003; Connected to 127.0.0.1:953</span>
           {% else %}
             <span style="color: var(--warning); font-weight: 600;">Direct File Only</span>
           {% endif %}
@@ -82,7 +138,7 @@
       </tr>
       <tr>
         <td><strong>Reverse PTR Synchronization</strong></td>
-        <td><code>RFC 2317 / 1035 Reverse Sync</code></td>
+        <td><code>RFC 2317 / 1035 Auto Sync</code></td>
         <td>
           {% if status.auto_ptr_sync %}
             <span style="color: var(--success); font-weight: 600;">&#10003; Enabled (A/AAAA &rarr; PTR)</span>
@@ -94,10 +150,63 @@
     </tbody>
   </table>
 </div>
+
+<!-- Flushname Modal -->
+<div id="flushnameModal" class="modal-backdrop">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3 class="modal-title">Flush Specific Domain Cache</h3>
+      <button class="btn btn-secondary btn-sm" onclick="closeModal('flushnameModal')">&times;</button>
+    </div>
+    <form onsubmit="handleFlushnameSubmit(event)">
+      <div class="form-group">
+        <label for="flushDomain">Target Domain FQDN</label>
+        <input type="text" id="flushDomain" required placeholder="e.g. example.com or app.mydomain.org" class="form-control font-mono">
+        <small style="color: var(--text-dim); font-size: 0.75rem;">Executes <code>rndc flushname &lt;domain&gt;</code> to purge all cached records for this specific name.</small>
+      </div>
+      <div style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1rem;">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('flushnameModal')">Cancel</button>
+        <button type="submit" class="btn btn-primary" id="btnFlushname">Flush Domain</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Output Modal -->
+<div id="outputModal" class="modal-backdrop">
+  <div class="modal-box" style="max-width: 650px;">
+    <div class="modal-header">
+      <h3 class="modal-title" id="outputModalTitle">Daemon Output</h3>
+      <button class="btn btn-secondary btn-sm" onclick="closeModal('outputModal')">&times;</button>
+    </div>
+    <pre id="outputModalBody" style="background: #020617; color: #94a3b8; font-family: monospace; font-size: 0.8rem; padding: 1rem; border-radius: 6px; max-height: 400px; overflow-y: auto; white-space: pre-wrap; margin-top: 1rem;"></pre>
+    <div style="display: flex; justify-content: flex-end; margin-top: 1rem;">
+      <button class="btn btn-primary" onclick="closeModal('outputModal')">Close</button>
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
 <script>
+async function loadAnalytics() {
+  try {
+    const res = await fetch("/api/v1/system/analytics");
+    if (!res.ok) return;
+    const data = await res.json();
+
+    document.getElementById("adblockRulesCount").innerText = (data.adblock_rules || 0).toLocaleString();
+    document.getElementById("adblockSize").innerText = `${data.adblock_size_mb || 0} MB active zone`;
+    document.getElementById("localOverridesCount").innerText = data.total_overrides || 0;
+    if (data.disk) {
+      document.getElementById("diskUsage").innerText = `${data.disk.used_gb} GB used`;
+      document.getElementById("diskFree").innerText = `${data.disk.free_gb} GB free of ${data.disk.total_gb} GB`;
+    }
+  } catch (e) {
+    console.error("Failed loading analytics", e);
+  }
+}
+
 async function runCheckconf(btn) {
   const orig = btn.innerText;
   btn.disabled = true;
@@ -117,5 +226,67 @@ async function runCheckconf(btn) {
     btn.innerText = orig;
   }
 }
+
+async function runRndcAction(url, label) {
+  if (!confirm(`Are you sure you want to execute '${label}'?`)) return;
+  try {
+    const res = await fetch(url, { method: "POST" });
+    const data = await res.json();
+    if (res.ok) {
+      showToast(data.message || `${label} executed successfully`);
+    } else {
+      showToast(`Error: ${data.detail || data.message}`, true);
+    }
+  } catch (err) {
+    showToast(`Failed: ${err.message}`, true);
+  }
+}
+
+function openFlushnameModal() {
+  document.getElementById("flushDomain").value = "";
+  openModal("flushnameModal");
+}
+
+async function handleFlushnameSubmit(e) {
+  e.preventDefault();
+  const domain = document.getElementById("flushDomain").value.trim();
+  const btn = document.getElementById("btnFlushname");
+  btn.disabled = true;
+  btn.innerText = "Flushing...";
+
+  try {
+    const res = await fetch("/api/v1/system/rndc/flushname", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ domain: domain }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      closeModal("flushnameModal");
+      showToast(data.message || `Flushed cache for ${domain}`);
+    } else {
+      showToast(`Error: ${data.detail}`, true);
+    }
+  } catch (err) {
+    showToast(`Failed: ${err.message}`, true);
+  } finally {
+    btn.disabled = false;
+    btn.innerText = "Flush Domain";
+  }
+}
+
+async function showRndcStatus() {
+  try {
+    const res = await fetch("/api/v1/system/rndc/status");
+    const data = await res.json();
+    document.getElementById("outputModalTitle").innerText = "BIND 9 Daemon Status (rndc status)";
+    document.getElementById("outputModalBody").innerText = data.output || "No output returned";
+    openModal("outputModal");
+  } catch (err) {
+    showToast(`Failed fetching status: ${err.message}`, true);
+  }
+}
+
+document.addEventListener("DOMContentLoaded", loadAnalytics);
 </script>
 {% endblock %}

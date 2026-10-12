@@ -8,17 +8,21 @@
     <a href="/zones/{{ zone_name }}" style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 0.4rem; display: inline-block;">&larr; Back to Zone Records</a>
     <h1 class="page-title">Raw Zone File: {{ zone_name }}</h1>
     <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.25rem;">
-      Edits will be verified with <code>named-checkzone</code> before applying to disk.
+      Edits will automatically create a revision snapshot and verify syntax with <code>named-checkzone</code> before applying to disk.
     </p>
   </div>
-  <div style="display: flex; gap: 0.6rem; align-items: center;">
+  <div style="display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap;">
+    <button type="button" class="btn btn-secondary btn-sm" onclick="handlePreflightCheck(this)">&#9881; Pre-Flight Lint</button>
     <label class="form-check" style="margin-right: 0.5rem;">
       <input type="checkbox" id="bumpSerialCheck" checked>
       <span>Auto-bump SOA serial</span>
     </label>
-    <button class="btn btn-primary" id="btnSaveRaw" onclick="handleSaveRaw()">Save & Validate</button>
+    <button class="btn btn-primary btn-sm" id="btnSaveRaw" onclick="handleSaveRaw()">Save & Validate</button>
   </div>
 </div>
+
+<!-- Preflight Results Banner -->
+<div id="preflightAlertBox" style="display: none; margin-bottom: 1rem; border-radius: var(--radius); padding: 1rem; font-size: 0.85rem;"></div>
 
 <div style="background: #0d1117; border: 1px solid var(--border-color); border-radius: var(--radius); padding: 1rem;">
   <textarea id="rawContent" rows="24" class="form-control" style="font-family: 'Fira Code', 'Cascadia Code', Consolas, monospace; font-size: 0.9rem; line-height: 1.5; white-space: pre; tab-size: 8; background: #070a13; color: #e2e8f0; border: none; resize: vertical;" spellcheck="false">{{ content }}</textarea>
@@ -28,6 +32,53 @@
 {% block scripts %}
 <script>
 const currentZone = "{{ zone_name }}";
+
+async function handlePreflightCheck(btn) {
+  const orig = btn.innerText;
+  btn.disabled = true;
+  btn.innerText = "Checking...";
+
+  const content = document.getElementById("rawContent").value;
+  const alertBox = document.getElementById("preflightAlertBox");
+
+  try {
+    const res = await fetch(`/api/v1/zones/${encodeURIComponent(currentZone)}/validate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content: content }),
+    });
+    const data = await res.json();
+
+    alertBox.style.display = "block";
+    if (data.valid && (!data.issues || data.issues.length === 0)) {
+      alertBox.style.background = "rgba(16, 185, 129, 0.1)";
+      alertBox.style.border = "1px solid #10b981";
+      alertBox.style.color = "#6ee7b7";
+      alertBox.innerHTML = `<strong>&#10003; Pre-flight Check Passed:</strong> Zone syntax is clean with no anti-pattern warnings.`;
+    } else {
+      const hasErrors = data.issues.some(i => i.level === "error");
+      alertBox.style.background = hasErrors ? "rgba(239, 68, 68, 0.1)" : "rgba(245, 158, 11, 0.1)";
+      alertBox.style.border = `1px solid ${hasErrors ? '#ef4444' : '#f59e0b'}`;
+      alertBox.style.color = hasErrors ? "#fca5a5" : "#fcd34d";
+
+      const listHtml = data.issues.map(i => `
+        <li style="margin-top: 0.25rem;">
+          <strong>[${i.level.toUpperCase()}]</strong> ${i.message} ${i.record ? `(<em>${i.record}</em>)` : ''}
+        </li>
+      `).join("");
+
+      alertBox.innerHTML = `
+        <strong>${hasErrors ? '&#9888; Pre-flight Validation Issues Detected:' : '&#9888; Anti-Pattern Warnings:'}</strong>
+        <ul style="margin: 0.5rem 0 0 1.25rem; padding: 0;">${listHtml}</ul>
+      `;
+    }
+  } catch (err) {
+    showToast(`Validation check failed: ${err.message}`, true);
+  } finally {
+    btn.disabled = false;
+    btn.innerText = orig;
+  }
+}
 
 async function handleSaveRaw() {
   const btn = document.getElementById("btnSaveRaw");

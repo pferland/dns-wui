@@ -15,13 +15,16 @@
       Local BIND 9 configuration on <code>{{ bind_host }}</code> &bull; Path: <code>{{ zones_dir }}</code>
     </p>
   </div>
-  <div style="display: flex; gap: 0.6rem; align-items: center;">
+  <div style="display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap;">
+    <a href="/api/v1/zones/export/all" class="btn btn-secondary btn-sm" title="Download ZIP backup archive of all active zones">
+      &#128230; Backup All Zones (.ZIP)
+    </a>
     {% if include_ignored %}
       <a href="/{% if filter_type %}?type={{ filter_type }}{% endif %}" class="btn btn-secondary btn-sm" title="Hide system default and adblock zones">Active Zones Only</a>
     {% else %}
       <a href="/?include_ignored=true{% if filter_type %}&type={{ filter_type }}{% endif %}" class="btn btn-secondary btn-sm" title="Show system default and adblock zones">Show Ignored System Zones</a>
     {% endif %}
-    <button class="btn btn-primary btn-sm" onclick="openModal('createZoneModal')">+ Create Zone</button>
+    <button class="btn btn-primary btn-sm" onclick="openModal('createZoneModal')">+ Add Zone</button>
   </div>
 </div>
 
@@ -41,10 +44,10 @@
     <thead>
       <tr>
         <th style="width: 28%;">Zone Origin</th>
-        <th style="width: 12%;">Type</th>
-        <th style="width: 10%;">Records</th>
+        <th style="width: 14%;">Type / Role</th>
+        <th style="width: 9%;">Records</th>
         <th style="width: 12%;">SOA Serial</th>
-        <th style="width: 23%;">Configuration Target</th>
+        <th style="width: 22%;">Target / Masters</th>
         <th style="width: 15%; text-align: right;">Actions</th>
       </tr>
     </thead>
@@ -55,10 +58,12 @@
             <a href="/zones/{{ z.name }}" style="font-weight: 700; color: #60a5fa; font-size: 0.9rem;" class="zone-name-cell">{{ z.name }}</a>
           </td>
           <td>
-            {% if z.is_reverse %}
+            {% if z.zone_type in ('slave', 'secondary') %}
+              <span class="badge" style="background: rgba(168, 85, 247, 0.2); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.3);">SLAVE MIRROR</span>
+            {% elif z.is_reverse %}
               <span class="badge badge-reverse">PTR REVERSE</span>
             {% else %}
-              <span class="badge badge-forward">FORWARD</span>
+              <span class="badge badge-forward">MASTER</span>
             {% endif %}
           </td>
           <td>
@@ -68,13 +73,21 @@
             <code style="color: #94a3b8; font-size: 0.82rem;">{{ z.serial or 'N/A' }}</code>
           </td>
           <td>
-            <span style="color: var(--text-dim); font-size: 0.78rem;" class="zone-path-cell font-mono">{{ z.file_path }}</span>
+            {% if z.zone_type in ('slave', 'secondary') and z.masters %}
+              <span style="color: #a78bfa; font-size: 0.78rem;" class="font-mono">Masters: {{ z.masters|join(', ') }}</span>
+            {% else %}
+              <span style="color: var(--text-dim); font-size: 0.78rem;" class="zone-path-cell font-mono">{{ z.file_path }}</span>
+            {% endif %}
           </td>
           <td style="text-align: right;">
             <div style="display: inline-flex; gap: 0.35rem;">
-              <a href="/zones/{{ z.name }}" class="btn btn-secondary btn-sm" title="Manage DNS records">Manage</a>
-              <a href="/zones/{{ z.name }}/raw" class="btn btn-secondary btn-sm" title="Edit raw zone text">Raw</a>
-              <button class="btn btn-secondary btn-sm" onclick="reloadZone('{{ z.name }}', this)" title="Reload via rndc">&#8635;</button>
+              <a href="/zones/{{ z.name }}" class="btn btn-secondary btn-sm" title="Inspect records">Records</a>
+              {% if z.zone_type not in ('slave', 'secondary') %}
+                <a href="/zones/{{ z.name }}/raw" class="btn btn-secondary btn-sm" title="Edit raw zone text">Raw</a>
+                <button class="btn btn-secondary btn-sm" onclick="reloadZone('{{ z.name }}', this)" title="Reload via rndc">&#8635;</button>
+              {% else %}
+                <button class="btn btn-secondary btn-sm" onclick="handleRetransferZone('{{ z.name }}', this)" title="Force AXFR retransfer from cloud master">&#10515; Sync</button>
+              {% endif %}
             </div>
           </td>
         </tr>
@@ -89,14 +102,22 @@
   </table>
 </div>
 
-<!-- Create Zone Modal -->
+<!-- Create Zone Modal (Supports Master & Secondary) -->
 <div id="createZoneModal" class="modal-backdrop">
   <div class="modal-box">
     <div class="modal-header">
-      <h3 class="modal-title">Create New DNS Zone</h3>
+      <h3 class="modal-title">Add DNS Zone</h3>
       <button class="btn btn-secondary btn-sm" onclick="closeModal('createZoneModal')">&times;</button>
     </div>
-    <form id="createZoneForm" onsubmit="handleCreateZone(event)">
+
+    <!-- Type Switcher Tabs -->
+    <div style="display: flex; gap: 0.5rem; margin-bottom: 1.25rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.75rem;">
+      <button type="button" class="btn btn-primary btn-sm" id="tabBtnMaster" onclick="switchZoneTypeTab('master')">Authoritative Primary (Master)</button>
+      <button type="button" class="btn btn-secondary btn-sm" id="tabBtnSlave" onclick="switchZoneTypeTab('slave')">Cloud Mirror (Secondary / Slave)</button>
+    </div>
+
+    <!-- Master Form -->
+    <form id="createMasterForm" onsubmit="handleCreateZone(event)">
       <div class="form-group">
         <label for="newOrigin">Zone Domain / Origin</label>
         <input type="text" id="newOrigin" required placeholder="e.g. home.lab or 1.168.192.in-addr.arpa" class="form-control">
@@ -121,7 +142,25 @@
       </div>
       <div style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1.5rem;">
         <button type="button" class="btn btn-secondary" onclick="closeModal('createZoneModal')">Cancel</button>
-        <button type="submit" class="btn btn-primary" id="btnSubmitZone">Create Zone</button>
+        <button type="submit" class="btn btn-primary" id="btnSubmitZone">Create Master Zone</button>
+      </div>
+    </form>
+
+    <!-- Slave / Mirror Form -->
+    <form id="createSlaveForm" onsubmit="handleCreateSlaveZone(event)" style="display: none;">
+      <div class="form-group">
+        <label for="slaveOrigin">External Domain to Mirror</label>
+        <input type="text" id="slaveOrigin" required placeholder="e.g. mycompany.com or example.org" class="form-control font-mono">
+        <small style="color: var(--text-dim); font-size: 0.75rem;">Domain hosted on external cloud DNS (ClouDNS, Namecheap, HE.net, etc.).</small>
+      </div>
+      <div class="form-group">
+        <label for="slaveMasters">Cloud Master Nameserver IP(s)</label>
+        <input type="text" id="slaveMasters" required placeholder="e.g. 198.51.100.1, 203.0.113.5" class="form-control font-mono">
+        <small style="color: var(--text-dim); font-size: 0.75rem;">Comma-separated IP addresses authorized to transfer AXFR/IXFR records to this server.</small>
+      </div>
+      <div style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1.5rem;">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('createZoneModal')">Cancel</button>
+        <button type="submit" class="btn btn-primary" id="btnSubmitSlaveZone">Configure Secondary Mirror</button>
       </div>
     </form>
   </div>
@@ -130,6 +169,25 @@
 
 {% block scripts %}
 <script>
+function switchZoneTypeTab(type) {
+  const masterForm = document.getElementById("createMasterForm");
+  const slaveForm = document.getElementById("createSlaveForm");
+  const btnMaster = document.getElementById("tabBtnMaster");
+  const btnSlave = document.getElementById("tabBtnSlave");
+
+  if (type === "master") {
+    masterForm.style.display = "block";
+    slaveForm.style.display = "none";
+    btnMaster.className = "btn btn-primary btn-sm";
+    btnSlave.className = "btn btn-secondary btn-sm";
+  } else {
+    masterForm.style.display = "none";
+    slaveForm.style.display = "block";
+    btnMaster.className = "btn btn-secondary btn-sm";
+    btnSlave.className = "btn btn-primary btn-sm";
+  }
+}
+
 async function handleCreateZone(e) {
   e.preventDefault();
   const btn = document.getElementById("btnSubmitZone");
@@ -152,17 +210,70 @@ async function handleCreateZone(e) {
     });
     const data = await res.json();
     if (res.ok) {
-      showToast("Zone created successfully!");
+      showToast("Master zone created successfully!");
       setTimeout(() => window.location.reload(), 1000);
     } else {
       showToast(`Error: ${data.detail}`, true);
       btn.disabled = false;
-      btn.innerText = "Create Zone";
+      btn.innerText = "Create Master Zone";
     }
   } catch (err) {
     showToast(`Error: ${err}`, true);
     btn.disabled = false;
-    btn.innerText = "Create Zone";
+    btn.innerText = "Create Master Zone";
+  }
+}
+
+async function handleCreateSlaveZone(e) {
+  e.preventDefault();
+  const btn = document.getElementById("btnSubmitSlaveZone");
+  btn.disabled = true;
+  btn.innerText = "Configuring...";
+
+  const origin = document.getElementById("slaveOrigin").value.trim();
+  const rawMasters = document.getElementById("slaveMasters").value.trim();
+  const masters = rawMasters.split(/[,;\s]+/).filter(x => x.length > 0);
+
+  try {
+    const res = await fetch("/api/v1/zones/secondary", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ origin: origin, masters: masters }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      showToast(data.message || "Secondary zone configured!");
+      setTimeout(() => window.location.reload(), 1000);
+    } else {
+      showToast(`Error: ${data.detail}`, true);
+      btn.disabled = false;
+      btn.innerText = "Configure Secondary Mirror";
+    }
+  } catch (err) {
+    showToast(`Error: ${err}`, true);
+    btn.disabled = false;
+    btn.innerText = "Configure Secondary Mirror";
+  }
+}
+
+async function handleRetransferZone(zoneName, btn) {
+  const orig = btn.innerText;
+  btn.disabled = true;
+  btn.innerText = "...";
+  try {
+    const res = await fetch(`/api/v1/zones/${encodeURIComponent(zoneName)}/retransfer`, { method: "POST" });
+    const data = await res.json();
+    if (res.ok) {
+      showToast(data.message || "Retransfer triggered!");
+      setTimeout(() => window.location.reload(), 1200);
+    } else {
+      showToast(`Error: ${data.detail}`, true);
+    }
+  } catch (err) {
+    showToast(`Failed: ${err}`, true);
+  } finally {
+    btn.disabled = false;
+    btn.innerText = orig;
   }
 }
 </script>

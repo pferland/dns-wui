@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 import re
 from app.config import settings
@@ -9,6 +9,7 @@ ZONE_BLOCK_PATTERN = re.compile(
 )
 FILE_PATTERN = re.compile(r'file\s+"([^"]+)";', re.IGNORECASE)
 TYPE_PATTERN = re.compile(r'type\s+(master|primary|slave|secondary|forward|hint);', re.IGNORECASE)
+MASTERS_PATTERN = re.compile(r'(?:masters|primaries)\s*\{([^}]+)\};', re.IGNORECASE)
 
 
 @dataclass
@@ -18,6 +19,7 @@ class DiscoveredZone:
     zone_type: str  # master, slave, etc.
     is_reverse: bool
     source: str  # "named.conf" or "directory_scan"
+    masters: list[str] = field(default_factory=list)
 
 
 def is_reverse_zone(name: str) -> bool:
@@ -128,12 +130,19 @@ def parse_named_conf(
         else:
             file_path = p
 
+        masters_list: list[str] = []
+        masters_match = MASTERS_PATTERN.search(body)
+        if masters_match:
+            raw_m = masters_match.group(1).replace(";", " ")
+            masters_list = [ip.strip() for ip in raw_m.split() if ip.strip()]
+
         zones.append(DiscoveredZone(
             name=zone_name,
             file_path=file_path,
             zone_type=ztype,
             is_reverse=is_reverse_zone(zone_name),
             source="named.conf",
+            masters=masters_list,
         ))
 
     # 2. Recursively follow included configuration files
@@ -225,3 +234,28 @@ def append_zone_to_named_conf(zone_name: str, file_path: Path, conf_path: Path |
     )
     with target_conf.open("a", encoding="utf-8") as f:
         f.write(block)
+
+
+def append_slave_zone_to_named_conf(
+    zone_name: str,
+    file_path: Path,
+    masters: list[str],
+    conf_path: Path | None = None,
+) -> None:
+    """Add new secondary/slave zone entry with master nameserver IPs to named.conf."""
+    target_conf = conf_path or settings.NAMED_CONF
+    target_conf.parent.mkdir(parents=True, exist_ok=True)
+
+    clean_origin = zone_name.strip().rstrip(".")
+    masters_str = " ".join(f"{m.strip()};" for m in masters if m.strip())
+
+    block = (
+        f'\nzone "{clean_origin}" IN {{\n'
+        f'    type slave;\n'
+        f'    masters {{ {masters_str} }};\n'
+        f'    file "{file_path.resolve()}";\n'
+        f'}};\n'
+    )
+    with target_conf.open("a", encoding="utf-8") as f:
+        f.write(block)
+

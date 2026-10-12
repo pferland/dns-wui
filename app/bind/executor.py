@@ -8,17 +8,17 @@ from app.bind.validator import validate_zone_text
 logger = logging.getLogger(__name__)
 
 
-async def reload_zone_rndc(zone_origin: str) -> tuple[bool, str]:
-    """Execute rndc reload <zone>."""
+async def execute_rndc_cmd(*args: str) -> tuple[bool, str]:
+    """Execute arbitrary rndc command with sudo support."""
     if not settings.RNDC_BIN or not Path(settings.RNDC_BIN).exists():
-        logger.info("rndc not configured or installed on this system; skipping active daemon reload.")
-        return True, "rndc omitted (not found)"
+        logger.info("rndc not configured or installed on this system; skipping execution.")
+        return True, "rndc omitted (binary not found)"
 
-    clean_origin = zone_origin.strip().rstrip(".")
     cmd = []
     if settings.USE_SUDO_FOR_RNDC:
         cmd.append("sudo")
-    cmd.extend([settings.RNDC_BIN, "reload", clean_origin])
+    cmd.append(settings.RNDC_BIN)
+    cmd.extend(args)
 
     try:
         proc = await asyncio.create_subprocess_exec(
@@ -27,13 +27,52 @@ async def reload_zone_rndc(zone_origin: str) -> tuple[bool, str]:
             stderr=asyncio.subprocess.PIPE,
         )
         stdout, stderr = await proc.communicate()
+        out_str = stdout.decode().strip()
+        err_str = stderr.decode().strip()
         if proc.returncode == 0:
-            return True, stdout.decode().strip() or "Zone reloaded via rndc"
+            return True, out_str or "Command completed successfully"
         else:
-            err = stderr.decode().strip() or stdout.decode().strip()
-            return False, f"rndc error (code {proc.returncode}): {err}"
+            return False, f"rndc error (code {proc.returncode}): {err_str or out_str}"
     except Exception as e:
         return False, f"Failed executing rndc: {e}"
+
+
+async def reload_zone_rndc(zone_origin: str) -> tuple[bool, str]:
+    """Execute rndc reload <zone>."""
+    clean_origin = zone_origin.strip().rstrip(".")
+    return await execute_rndc_cmd("reload", clean_origin)
+
+
+async def rndc_flush() -> tuple[bool, str]:
+    """Flush the resolver cache: rndc flush."""
+    return await execute_rndc_cmd("flush")
+
+
+async def rndc_flushname(domain: str) -> tuple[bool, str]:
+    """Flush specific domain cache: rndc flushname <domain>."""
+    clean_domain = domain.strip().rstrip(".")
+    return await execute_rndc_cmd("flushname", clean_domain)
+
+
+async def rndc_reconfig() -> tuple[bool, str]:
+    """Reload configuration files and new zones: rndc reconfig."""
+    return await execute_rndc_cmd("reconfig")
+
+
+async def rndc_status() -> tuple[bool, str]:
+    """Display BIND server status: rndc status."""
+    return await execute_rndc_cmd("status")
+
+
+async def rndc_dumpdb() -> tuple[bool, str]:
+    """Dump cache to dump file: rndc dumpdb -all."""
+    return await execute_rndc_cmd("dumpdb", "-all")
+
+
+async def rndc_retransfer(zone_origin: str) -> tuple[bool, str]:
+    """Force retransfer of a secondary/slave zone: rndc retransfer <zone>."""
+    clean_origin = zone_origin.strip().rstrip(".")
+    return await execute_rndc_cmd("retransfer", clean_origin)
 
 
 async def save_zone_file(file_path: Path, origin: str, content: str) -> tuple[bool, str]:

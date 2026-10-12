@@ -1,0 +1,203 @@
+{% extends "base.html" %}
+
+{% block title %}API Keys & Tokens - BIND 9 Manager{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">API Keys & Automation Tokens</h1>
+    <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.25rem;">
+      Long-lived bearer tokens for CI/CD pipelines, Certbot DNS-01 ACME challenge automation, Terraform, Ansible, and automated scripts.
+    </p>
+  </div>
+  <div>
+    <button class="btn btn-primary btn-sm" onclick="openModal('addKeyModal')">+ Generate API Key</button>
+  </div>
+</div>
+
+<!-- API Keys Table -->
+<div class="data-table-container">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th style="width: 25%;">Key Name / Purpose</th>
+        <th style="width: 20%;">Key Token Prefix</th>
+        <th style="width: 12%;">Role / Tier</th>
+        <th style="width: 15%;">Created At</th>
+        <th style="width: 15%;">Last Used</th>
+        <th style="width: 13%; text-align: right;">Actions</th>
+      </tr>
+    </thead>
+    <tbody id="apiKeysTableBody">
+      <tr>
+        <td colspan="6" style="text-align: center; padding: 2rem; color: var(--text-dim);">Loading API Keys...</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- Generate Key Modal -->
+<div id="addKeyModal" class="modal-backdrop">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3 class="modal-title">Generate API Automation Key</h3>
+      <button class="btn btn-secondary btn-sm" onclick="closeModal('addKeyModal')">&times;</button>
+    </div>
+    <form id="keyForm" onsubmit="handleCreateKey(event)">
+      <div class="form-group">
+        <label for="keyName">Key Description / Client Name</label>
+        <input type="text" id="keyName" required placeholder="e.g. Certbot-ACME-Home, Terraform-Prod" class="form-control">
+      </div>
+
+      <div class="form-group" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+        <div>
+          <label for="keyRole">Role Tier</label>
+          <select id="keyRole" class="form-control">
+            <option value="operator" selected>Operator (Zone & Record CRUD)</option>
+            <option value="admin">Admin (Full Server Access)</option>
+          </select>
+        </div>
+        <div>
+          <label for="keyExpires">Expiration</label>
+          <select id="keyExpires" class="form-control">
+            <option value="0">Never Expires</option>
+            <option value="30">30 Days</option>
+            <option value="90">90 Days</option>
+            <option value="365">1 Year (365 Days)</option>
+          </select>
+        </div>
+      </div>
+
+      <div style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1.25rem;">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('addKeyModal')">Cancel</button>
+        <button type="submit" class="btn btn-primary" id="btnSubmitKey">Generate Key</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Key Created Reveal Modal -->
+<div id="keyRevealModal" class="modal-backdrop">
+  <div class="modal-box" style="border: 1px solid #10b981;">
+    <div class="modal-header">
+      <h3 class="modal-title" style="color: #10b981;">&#10003; API Key Generated Successfully</h3>
+      <button class="btn btn-secondary btn-sm" onclick="closeModal('keyRevealModal')">&times;</button>
+    </div>
+    <div style="margin: 1rem 0;">
+      <p style="color: #f1f5f9; font-size: 0.9rem; margin-bottom: 0.75rem;">
+        Copy your secret API token now. <strong>For security, it will not be displayed again.</strong>
+      </p>
+      <div style="background: #020617; border: 1px solid var(--border-color); border-radius: 6px; padding: 0.75rem; display: flex; justify-content: space-between; align-items: center; gap: 0.5rem;">
+        <code id="revealedSecret" class="font-mono" style="color: #6ee7b7; word-break: break-all; font-size: 0.95rem;"></code>
+        <button class="btn btn-secondary btn-sm" onclick="copyRevealedKey()">Copy</button>
+      </div>
+      <p style="color: var(--text-dim); font-size: 0.8rem; margin-top: 0.75rem;">
+        Usage: Pass in HTTP headers as <code>X-API-Key: &lt;token&gt;</code> or <code>Authorization: Bearer &lt;token&gt;</code>.
+      </p>
+    </div>
+    <div style="display: flex; justify-content: flex-end; margin-top: 1rem;">
+      <button class="btn btn-primary" onclick="closeModal('keyRevealModal'); loadApiKeys();">Done</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function loadApiKeys() {
+  const tbody = document.getElementById("apiKeysTableBody");
+  try {
+    const res = await fetch("/api/v1/api-keys");
+    if (!res.ok) throw new Error("Failed fetching keys");
+    const keys = await res.json();
+
+    if (keys.length === 0) {
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="6" style="text-align: center; padding: 2.5rem; color: var(--text-dim);">
+            No API automation keys active. Click <strong>+ Generate API Key</strong> to create one for CI/CD or ACME DNS validation.
+          </td>
+        </tr>
+      `;
+      return;
+    }
+
+    tbody.innerHTML = keys.map(k => `
+      <tr>
+        <td><strong>${k.name}</strong></td>
+        <td><code class="font-mono" style="color: #93c5fd;">${k.prefix}</code></td>
+        <td><span class="badge badge-${k.role === 'admin' ? 'danger' : 'forward'}">${k.role.toUpperCase()}</span></td>
+        <td style="color: var(--text-dim); font-size: 0.85rem;">${k.created_at.slice(0, 10)}</td>
+        <td style="color: var(--text-dim); font-size: 0.85rem;">${k.last_used_at ? k.last_used_at.slice(0, 16).replace('T', ' ') : 'Never'}</td>
+        <td style="text-align: right;">
+          <button class="btn btn-danger btn-sm" onclick="revokeKey(${k.id}, '${k.name}')">Revoke</button>
+        </td>
+      </tr>
+    `).join("");
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="6" style="color: var(--danger); text-align: center; padding: 2rem;">Error: ${err.message}</td></tr>`;
+  }
+}
+
+async function handleCreateKey(e) {
+  e.preventDefault();
+  const btn = document.getElementById("btnSubmitKey");
+  btn.disabled = true;
+  btn.innerText = "Generating...";
+
+  const name = document.getElementById("keyName").value.trim();
+  const role = document.getElementById("keyRole").value;
+  const days = parseInt(document.getElementById("keyExpires").value, 10);
+
+  try {
+    const res = await fetch("/api/v1/api-keys", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: name, role: role, expires_in_days: days > 0 ? days : null }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      closeModal("addKeyModal");
+      document.getElementById("keyForm").reset();
+      document.getElementById("revealedSecret").innerText = data.api_key;
+      openModal("keyRevealModal");
+    } else {
+      showToast(`Error: ${data.detail}`, true);
+    }
+  } catch (err) {
+    showToast(`Failed: ${err.message}`, true);
+  } finally {
+    btn.disabled = false;
+    btn.innerText = "Generate Key";
+  }
+}
+
+async function revokeKey(id, name) {
+  if (!confirm(`Are you sure you want to permanently revoke API Key '${name}'? Any automations using this key will be denied.`)) return;
+
+  try {
+    const res = await fetch(`/api/v1/api-keys/${id}`, { method: "DELETE" });
+    const data = await res.json();
+    if (res.ok) {
+      showToast(data.message || "Key revoked!");
+      loadApiKeys();
+    } else {
+      showToast(`Error: ${data.detail}`, true);
+    }
+  } catch (err) {
+    showToast(`Failed: ${err.message}`, true);
+  }
+}
+
+function copyRevealedKey() {
+  const text = document.getElementById("revealedSecret").innerText;
+  navigator.clipboard.writeText(text).then(() => {
+    showToast("API Key copied to clipboard!");
+  }).catch(() => {
+    showToast("Failed to copy automatically. Please select and copy manually.", true);
+  });
+}
+
+document.addEventListener("DOMContentLoaded", loadApiKeys);
+</script>
+{% endblock %}

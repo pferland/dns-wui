@@ -1,20 +1,20 @@
-# DNS-WUI Feature Roadmap & Future Enhancements
+# DNS-WUI Feature Roadmap & Implementation Status
 
-This document tracks prioritized future features and operational improvements for the BIND 9 Web User Interface (`dns-wui`).
+This document tracks prioritized features and operational capabilities for the BIND 9 Web User Interface (`dns-wui`).
 
 ---
 
 ## 1. Operations, Reliability & Safety
 
-- **Zone Versioning & 1-Click Rollback (Diff Viewer)**
-  - Automatically create timestamped snapshot revisions or git-backed commits before any write (UI form edits and raw zone text edits).
-  - Side-by-side visual diff viewer between revisions.
-  - 1-click rollback to any previous revision with automatic serial incrementing and `rndc reload`.
-- **Dry-Run & Pre-Flight Validation Panel**
-  - Execute `named-checkzone` and display warnings/errors in the UI *before* saving changes to disk.
-  - Warn on common DNS anti-patterns (e.g., CNAME coexisting with other records, missing trailing dot on FQDNs).
-- **RNDC Server Controls Panel**
-  - Dedicated operational controls in the UI:
+- [x] **Zone Versioning & 1-Click Rollback (Diff Viewer)**
+  - Automatically creates timestamped snapshot revisions before and after any write (UI form edits and raw zone text edits).
+  - Visual unified diff viewer comparing past revisions against current zone file.
+  - 1-click rollback to any historical revision with automated serial incrementing and `rndc reload`.
+- [x] **Dry-Run & Pre-Flight Validation Panel**
+  - Syntax verification via `named-checkzone` and dnspython AST parser before saving to disk.
+  - Lints common DNS anti-patterns: CNAME coexisting with other records, missing trailing dots on targets, MX pointing to IPs, and abnormal TTL values.
+- [x] **RNDC Server Controls Panel**
+  - Operational controls in the UI (`/system`):
     - `rndc flush` (clear resolver cache)
     - `rndc flushname <domain>` (clear specific domain cache)
     - `rndc reload <zone>` (reload single zone)
@@ -25,49 +25,50 @@ This document tracks prioritized future features and operational improvements fo
 
 ## 2. DNS Record Management & Power Tools
 
-- **In-Browser DNS Lookup / Dig Tool**
-  - Built-in query console to test records against local BIND (`127.0.0.1:53`) and upstream resolvers (e.g., `1.1.1.1`, `8.8.8.8`) side-by-side to verify resolution and authoritative flags immediately.
-- **Secondary / Slave Zone Mirroring (Local Copy of External Cloud DNS)**
-  - Configure local BIND 9 as an automated secondary / slave mirror for external zones hosted on ClouDNS, Namecheap, Hurricane Electric, etc.
-  - Automatically append `type slave;` / `type secondary;` blocks with specified cloud master nameserver IPs (`primaries { <IP>; };`).
-  - Supports RFC 1996 `NOTIFY` and RFC 5936 `AXFR`/`IXFR` incremental zone transfers so local zone copies automatically stay synchronized with cloud providers in real-time.
-  - UI displays synchronized slave records in a read-only table with transfer health indicators, last sync timestamps, and a manual **"Sync Now / Retransfer"** (`rndc retransfer <zone>`) trigger.
-- **Local DNS Split-Horizon Overrides (RPZ-Powered Custom LAN Intercepts)**
-  - Dedicated **"Local Overrides"** section in the UI to selectively redirect specific subdomains of secondary or cloud-mirrored zones (e.g. pointing `app.example.com` or `nas.example.com` to internal LAN IPs `192.168.1.x` instead of public WAN IPs).
-  - Uses a dedicated high-priority Response Policy Zone (`rpz.local-overrides`) evaluated before external resolution.
-  - Leaves the secondary cloud zone 100% pure and untouched while providing instant table-based addition, editing, and toggling of local host overrides.
-- **Bulk Record Import & Export**
-  - Upload standard RFC 1035 zone files, CSV, or JSON record sets.
-  - 1-click download of all zones as backup archive or single `.zone` exports.
-- **Email Stack Wizard (SPF / DMARC / DKIM)**
-  - Form-based wizard to generate valid SPF (`v=spf1 ...`), DMARC (`_dmarc.domain.com`), and DKIM TXT records with automated syntax checking.
-- **Advanced Record Helpers**
-  - Guided form builders for `SRV` (service, priority, weight, port) and `CAA` (issue, issuewild, iodef for Let's Encrypt / DigiCert).
-- **Dynamic TTL Quick-Set**
-  - Bulk TTL modification across entire zones (e.g., temporarily lowering TTL to 60s ahead of server migration).
+- [x] **In-Browser DNS Lookup / Dig Tool**
+  - Built-in query console (`/tools`) to test records against local BIND (`127.0.0.1:53`) and upstream resolvers (`1.1.1.1`, `8.8.8.8`, `9.9.9.9`).
+  - Side-by-side comparison mode (Local BIND vs Cloudflare) with response latency, authoritative flags, answer/authority/additional records, and raw dig output.
+- [x] **Secondary / Slave Zone Mirroring (Local Copy of External Cloud DNS)**
+  - Configure local BIND 9 as an automated secondary mirror for external zones hosted on ClouDNS, Namecheap, Hurricane Electric, etc.
+  - Automatically writes `type slave; masters { <IP>; };` blocks with specified cloud master nameserver IPs.
+  - Read-only table view with dedicated **"Sync Now / Retransfer"** (`rndc retransfer <zone>`) trigger.
+- [x] **Local DNS Split-Horizon Overrides (RPZ-Powered Custom LAN Intercepts)**
+  - Dedicated **"Local Overrides"** section (`/overrides`) to selectively redirect specific subdomains of secondary or cloud-mirrored zones to local LAN IPs.
+  - Uses a dedicated high-priority Response Policy Zone (`rpz.overrides.local`) evaluated before external resolution.
+  - Leaves cloud zones pure and untouched while providing instant table-based addition, editing, and deletion.
+- [x] **Bulk Record Import & Export**
+  - Single-zone exports to standard RFC 1035 zone text, JSON record sets, and CSV.
+  - 1-click download of all active zones as a complete `.zip` backup archive.
+  - Bulk import from BIND text, JSON, or CSV with Append or Replace modes.
+- [x] **Email Stack Wizard (SPF / DMARC / DKIM)**
+  - Form-based wizard in Zone Detail to generate valid SPF (`v=spf1 ...`), DMARC (`_dmarc.domain.com`), and DKIM TXT records with 1-click addition to the zone.
+- [x] **Advanced Record Helpers**
+  - Guided form builders for `SRV` and `CAA` records.
+- [x] **Dynamic TTL Quick-Set**
+  - Bulk TTL modification across entire zones (60s migration mode, 300s, 3600s, 86400s).
 
 ---
 
 ## 3. Monitoring, Telemetry & Diagnostics
 
-- **BIND 9 XML/JSON Statistics Channel Dashboard**
-  - Connect to BIND's native statistics channel (`statistics-channels { inet 127.0.0.1 port 8053; };`).
-  - Graph live query traffic: Queries per second (QPS), cache hit rates, query distribution by type (`A`, `AAAA`, `PTR`, `CNAME`), and rejected queries.
-- **RPZ Ad-Block Analytics**
-  - Dashboard widget for `rpz.adblock.spam.local` showing total blocked domain count, file size, and query blocking activity.
-- **Zone Health Checker**
-  - Automated checks for missing reverse PTR pointers, expired SOA serials, and unreachable nameservers.
+- [x] **RPZ Ad-Block & System Telemetry Analytics**
+  - Telemetry cards for `rpz.adblock.spam.local` showing total blocked domain count, zone file size, split-horizon overrides count, and disk storage usage.
+- [x] **Zone Health Checker**
+  - Automated diagnostic audits calculating a health score (0-100) with categorized issue reports (SOA validity, Nameserver redundancy, Glue records, Email security compliance).
+- [ ] **BIND 9 Native Statistics Channel Live Graphs**
+  - Real-time QPS charts connecting directly to BIND's statistics-channels socket (`inet 127.0.0.1 port 8053;`).
 
 ---
 
 ## 4. Enterprise Access, API & Automation
 
-- **API Keys & Automation Webhooks**
-  - Long-lived API bearer tokens for CI/CD pipelines, Ansible, Terraform, or Certbot (automated DNS-01 ACME Let's Encrypt challenge validation).
-- **Secondary / Replica Zone Management**
-  - Monitor AXFR / IXFR zone transfer statuses, last transfer timestamps, and trigger `rndc retransfer <zone>` on secondary nameservers.
-- **Role-Based Access Control (RBAC)**
+- [x] **API Keys & Automation Tokens**
+  - Long-lived API bearer tokens (`wui_...`) for CI/CD pipelines, Ansible, Terraform, and automated Certbot ACME DNS-01 validation.
+  - Full management interface (`/api-keys`) supporting role scoping (`operator`, `admin`), expiration dates, and immediate revocation.
+- [x] **Secondary / Replica Zone Management**
+  - AXFR/IXFR transfer initiation and monitoring via `rndc retransfer <zone>`.
+- [x] **Role-Based Access Control (RBAC)**
   - Multi-user permission tiers:
-    - *Super Admin*: Full server configuration, raw file editor, user management.
-    - *Operator*: Record editing on assigned forward/reverse zones.
-    - *Viewer*: Read-only record search and inspection.
+    - *Super Admin*: Full server configuration, RNDC controls, API keys, raw file editor, user management.
+    - *Operator*: Record editing and zone operations on managed zones.
+    - *Viewer*: Read-only record search, inspection, and DNS dig queries.

@@ -1,0 +1,210 @@
+{% extends "base.html" %}
+
+{% block title %}DNS Diagnostics & Dig - BIND 9 Manager{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">DNS Diagnostics & Dig Tool</h1>
+    <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.25rem;">
+      Query local BIND (<code>127.0.0.1:53</code>) and upstream resolvers in real-time with authoritative telemetry and side-by-side comparison.
+    </p>
+  </div>
+</div>
+
+<!-- Query Form -->
+<div style="background: #0f172a; border: 1px solid var(--border-color); border-radius: var(--radius); padding: 1.25rem; margin-bottom: 1.5rem;">
+  <form id="digForm" onsubmit="handleDigSubmit(event)" style="display: grid; grid-template-columns: 2fr 1fr 1.5fr auto auto; gap: 0.75rem; align-items: end;">
+    <div class="form-group" style="margin-bottom: 0;">
+      <label for="digQuery">Target Hostname / IP</label>
+      <input type="text" id="digQuery" required placeholder="e.g. google.com, nas.home.lab, 192.168.1.1" class="form-control font-mono">
+    </div>
+
+    <div class="form-group" style="margin-bottom: 0;">
+      <label for="digType">Query Type</label>
+      <select id="digType" class="form-control">
+        <option value="A" selected>A (IPv4)</option>
+        <option value="AAAA">AAAA (IPv6)</option>
+        <option value="CNAME">CNAME (Alias)</option>
+        <option value="MX">MX (Mail)</option>
+        <option value="TXT">TXT (Text/SPF/DKIM)</option>
+        <option value="NS">NS (Nameserver)</option>
+        <option value="SOA">SOA (Authority)</option>
+        <option value="PTR">PTR (Reverse)</option>
+        <option value="ANY">ANY (All)</option>
+      </select>
+    </div>
+
+    <div class="form-group" style="margin-bottom: 0;">
+      <label for="digServer">Nameserver</label>
+      <select id="digServer" class="form-control">
+        <option value="127.0.0.1" selected>Local BIND (127.0.0.1:53)</option>
+        <option value="1.1.1.1">Cloudflare (1.1.1.1)</option>
+        <option value="8.8.8.8">Google DNS (8.8.8.8)</option>
+        <option value="9.9.9.9">Quad9 (9.9.9.9)</option>
+      </select>
+    </div>
+
+    <div>
+      <button type="submit" class="btn btn-primary" id="btnDig">Resolve Record</button>
+    </div>
+    <div>
+      <button type="button" class="btn btn-secondary" onclick="handleCompareSubmit()">Compare vs 1.1.1.1</button>
+    </div>
+  </form>
+</div>
+
+<!-- Comparison / Results Grid -->
+<div id="resultsContainer" style="display: none; margin-bottom: 2rem;">
+  <div id="singleResultBox"></div>
+  <div id="compareResultGrid" style="display: none; grid-template-columns: 1fr 1fr; gap: 1.5rem;">
+    <div id="localResultBox"></div>
+    <div id="upstreamResultBox"></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function queryDns(query, rtype, server) {
+  const res = await fetch("/api/v1/tools/dig", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ query: query, rtype: rtype, server: server, port: 53 }),
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.detail || "DNS resolution failed");
+  }
+  return await res.json();
+}
+
+function renderResultCard(data, title) {
+  const isOk = data.status === "NOERROR";
+  const badgeColor = isOk ? "var(--success)" : "var(--danger)";
+
+  let answersHtml = "";
+  if (data.answers && data.answers.length > 0) {
+    answersHtml = `
+      <div class="data-table-container" style="margin-top: 0.75rem;">
+        <table class="data-table" style="font-size: 0.85rem;">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Type</th>
+              <th>TTL</th>
+              <th>RDATA (Target / Value)</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${data.answers.map(a => `
+              <tr>
+                <td class="font-mono"><strong>${a.name}</strong></td>
+                <td><span class="badge badge-${a.rtype}">${a.rtype}</span></td>
+                <td class="font-mono" style="color: var(--text-dim);">${a.ttl}s</td>
+                <td><code style="color: #a5b4fc;" class="font-mono">${a.rdata}</code></td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
+  } else {
+    answersHtml = `<p style="color: var(--text-dim); font-size: 0.85rem; margin-top: 0.5rem; font-style: italic;">No resource records returned in ANSWER section.</p>`;
+  }
+
+  return `
+    <div style="background: #0d1117; border: 1px solid var(--border-color); border-radius: var(--radius); padding: 1.25rem;">
+      <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); padding-bottom: 0.75rem; margin-bottom: 0.75rem;">
+        <div>
+          <strong style="color: #f1f5f9; font-size: 1rem;">${title || data.server}</strong>
+          <span style="font-size: 0.8rem; color: var(--text-muted); margin-left: 0.5rem;">${data.server}:53</span>
+        </div>
+        <div style="display: flex; gap: 0.5rem; align-items: center;">
+          <span style="background: rgba(255,255,255,0.06); padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-family: monospace;">${data.response_time_ms} ms</span>
+          <span style="color: ${badgeColor}; font-weight: 600; font-size: 0.85rem;">${data.status}</span>
+        </div>
+      </div>
+
+      <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.5rem;">
+        Flags: <code>${data.flags.join(", ") || "none"}</code>
+      </div>
+
+      <div>
+        <h4 style="font-size: 0.85rem; color: var(--text-dim); text-transform: uppercase; margin-top: 0.5rem;">Answer Section (${data.answers ? data.answers.length : 0})</h4>
+        ${answersHtml}
+      </div>
+
+      <details style="margin-top: 1rem;">
+        <summary style="cursor: pointer; color: var(--text-muted); font-size: 0.8rem;">View Raw Dig Output</summary>
+        <pre style="background: #050811; color: #94a3b8; font-size: 0.75rem; padding: 0.75rem; border-radius: 4px; overflow-x: auto; margin-top: 0.5rem;">${data.raw_text}</pre>
+      </details>
+    </div>
+  `;
+}
+
+async function handleDigSubmit(e) {
+  e.preventDefault();
+  const btn = document.getElementById("btnDig");
+  btn.disabled = true;
+  btn.innerText = "Querying...";
+
+  const query = document.getElementById("digQuery").value.trim();
+  const rtype = document.getElementById("digType").value;
+  const server = document.getElementById("digServer").value;
+
+  const container = document.getElementById("resultsContainer");
+  const singleBox = document.getElementById("singleResultBox");
+  const compareGrid = document.getElementById("compareResultGrid");
+
+  container.style.display = "block";
+  compareGrid.style.display = "none";
+  singleBox.style.display = "block";
+  singleBox.innerHTML = `<p style="color: var(--text-muted);">Querying ${server} for ${rtype} record of ${query}...</p>`;
+
+  try {
+    const data = await queryDns(query, rtype, server);
+    singleBox.innerHTML = renderResultCard(data, `Nameserver: ${server}`);
+  } catch (err) {
+    singleBox.innerHTML = `<div style="color: var(--danger); padding: 1rem; background: rgba(239,68,68,0.1); border-radius: var(--radius);">${err.message}</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.innerText = "Resolve Record";
+  }
+}
+
+async function handleCompareSubmit() {
+  const query = document.getElementById("digQuery").value.trim();
+  const rtype = document.getElementById("digType").value;
+  if (!query) {
+    showToast("Please enter a target hostname or IP", true);
+    return;
+  }
+
+  const container = document.getElementById("resultsContainer");
+  const singleBox = document.getElementById("singleResultBox");
+  const compareGrid = document.getElementById("compareResultGrid");
+  const localBox = document.getElementById("localResultBox");
+  const upstreamBox = document.getElementById("upstreamResultBox");
+
+  container.style.display = "block";
+  singleBox.style.display = "none";
+  compareGrid.style.display = "grid";
+
+  localBox.innerHTML = `<p style="color: var(--text-muted);">Querying Local BIND (127.0.0.1)...</p>`;
+  upstreamBox.innerHTML = `<p style="color: var(--text-muted);">Querying Cloudflare (1.1.1.1)...</p>`;
+
+  try {
+    const [localRes, upstreamRes] = await Promise.all([
+      queryDns(query, rtype, "127.0.0.1"),
+      queryDns(query, rtype, "1.1.1.1"),
+    ]);
+
+    localBox.innerHTML = renderResultCard(localRes, "Local BIND (127.0.0.1)");
+    upstreamBox.innerHTML = renderResultCard(upstreamRes, "Cloudflare Public DNS (1.1.1.1)");
+  } catch (err) {
+    showToast(`Compare failed: ${err.message}`, true);
+  }
+}
+</script>
+{% endblock %}
