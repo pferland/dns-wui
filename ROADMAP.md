@@ -27,10 +27,11 @@ This document tracks prioritized future features and operational improvements fo
 
 - **In-Browser DNS Lookup / Dig Tool**
   - Built-in query console to test records against local BIND (`127.0.0.1:53`) and upstream resolvers (e.g., `1.1.1.1`, `8.8.8.8`) side-by-side to verify resolution and authoritative flags immediately.
-- **External DNS Zone Cloning & Migration (ClouDNS, Namecheap, Cloudflare, Route53, etc.)**
-  - **Direct AXFR Transfer**: Attempt standard RFC 5936 zone transfer (`AXFR`) from authorized external master nameservers if allowed.
-  - **Provider API Importer**: Input provider credentials/API keys (e.g. ClouDNS, Namecheap, Cloudflare, AWS Route 53, DigitalOcean) to fetch the full zone record set via REST API and automatically convert it into a local RFC 1035 BIND 9 zone file.
-  - **Active Reconnaissance Fallback (Zone Discovery / Brute-force Probe)**: When AXFR and API keys are unavailable, intelligently probe common DNS subdomains (`www`, `mail`, `autodiscover`, `vpn`, `ns*`, `mx`, `txt`, `cname`) using asynchronous parallel DNS queries, reconstruct the discovered records, and stage them as a new zone file for review.
+- **Secondary / Slave Zone Mirroring (Local Copy of External Cloud DNS)**
+  - Configure local BIND 9 as an automated secondary / slave mirror for external zones hosted on ClouDNS, Namecheap, Hurricane Electric, etc.
+  - Automatically append `type slave;` / `type secondary;` blocks with specified cloud master nameserver IPs (`primaries { <IP>; };`).
+  - Supports RFC 1996 `NOTIFY` and RFC 5936 `AXFR`/`IXFR` incremental zone transfers so local zone copies automatically stay synchronized with cloud providers in real-time.
+  - UI displays synchronized slave records in a read-only table with transfer health indicators, last sync timestamps, and a manual **"Sync Now / Retransfer"** (`rndc retransfer <zone>`) trigger.
 - **Bulk Record Import & Export**
   - Upload standard RFC 1035 zone files, CSV, or JSON record sets.
   - 1-click download of all zones as backup archive or single `.zone` exports.
