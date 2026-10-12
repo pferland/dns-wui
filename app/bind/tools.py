@@ -121,10 +121,13 @@ async def check_global_propagation(query: str, rtype: str = "A") -> list[dict[st
         answers_str = [a.rdata for a in res.answers]
         return {
             "name": resolver["name"],
+            "provider": resolver["name"],
             "ip": resolver["ip"],
+            "server": resolver["ip"],
             "location": resolver["location"],
             "status": res.status,
             "response_time_ms": res.response_time_ms,
+            "latency_ms": res.response_time_ms,
             "answers": answers_str,
         }
 
@@ -144,6 +147,7 @@ async def check_global_propagation(query: str, rtype: str = "A") -> list[dict[st
             item["matches_local"] = False
 
     return results
+
 
 
 async def benchmark_resolvers(query: str = "google.com", rounds: int = 5) -> list[dict[str, Any]]:
@@ -167,20 +171,28 @@ async def benchmark_resolvers(query: str = "google.com", rounds: int = 5) -> lis
             min_lat = round(min(latencies), 2)
             max_lat = round(max(latencies), 2)
             jitter = round(max_lat - min_lat, 2)
+            success_rate = round((len(latencies) / rounds) * 100)
         else:
-            avg_lat, min_lat, max_lat, jitter = 0, 0, 0, 0
+            avg_lat, min_lat, max_lat, jitter, success_rate = 0, 0, 0, 0, 0
 
         bench_results.append({
             "name": r["name"],
+            "provider": r["name"],
             "ip": r["ip"],
+            "server": r["ip"],
             "avg_ms": avg_lat,
+            "avg_latency_ms": avg_lat,
             "min_ms": min_lat,
+            "min_latency_ms": min_lat,
             "max_ms": max_lat,
+            "max_latency_ms": max_lat,
             "jitter_ms": jitter,
+            "success_rate": success_rate,
             "samples": len(latencies),
         })
 
-    return sorted(bench_results, key=lambda x: x["avg_ms"])
+    return sorted(bench_results, key=lambda x: (x["avg_latency_ms"] == 0, x["avg_latency_ms"]))
+
 
 
 @dataclass

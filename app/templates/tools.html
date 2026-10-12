@@ -351,17 +351,21 @@ async function handlePropSubmit(e) {
       badge.innerHTML = `<span class="badge badge-secondary">${data.total_resolvers} Global Resolvers Polled</span>`;
     }
 
-    tbody.innerHTML = data.results.map(r => {
+    const resList = data.results || data.resolvers || [];
+    tbody.innerHTML = resList.map(r => {
       const isOk = r.status === "NOERROR";
+      const provider = r.provider || r.name || "Resolver";
+      const server = r.server || r.ip || "Unknown";
+      const lat = r.latency_ms !== undefined ? r.latency_ms : (r.response_time_ms !== undefined ? r.response_time_ms : 0);
       const answersStr = r.answers && r.answers.length > 0 
         ? r.answers.map(a => `<code style="color: #a5b4fc; background: rgba(99,102,241,0.1); padding: 0.15rem 0.4rem; border-radius: 4px; margin-right: 0.3rem;">${a}</code>`).join(" ")
         : `<span style="color: var(--text-dim); font-style: italic;">No answers</span>`;
 
       return `
         <tr>
-          <td><strong>${r.provider}</strong></td>
-          <td class="font-mono" style="color: var(--text-muted);">${r.server}</td>
-          <td class="font-mono"><span style="background: rgba(255,255,255,0.05); padding: 0.2rem 0.4rem; border-radius: 4px;">${r.latency_ms} ms</span></td>
+          <td><strong>${provider}</strong></td>
+          <td class="font-mono" style="color: var(--text-muted);">${server}</td>
+          <td class="font-mono"><span style="background: rgba(255,255,255,0.05); padding: 0.2rem 0.4rem; border-radius: 4px;">${lat} ms</span></td>
           <td>
             <span style="color: ${isOk ? 'var(--success)' : 'var(--danger)'}; font-weight: 600;">
               ${r.status}
@@ -371,6 +375,7 @@ async function handlePropSubmit(e) {
         </tr>
       `;
     }).join("");
+
   } catch (err) {
     showToast(`Propagation check failed: ${err.message}`, true);
   } finally {
@@ -402,18 +407,26 @@ async function handleRunBenchmark() {
     }
     const data = await res.json();
 
-    tbody.innerHTML = data.benchmarks.map((b, idx) => {
+    const benches = data.benchmarks || [];
+    tbody.innerHTML = benches.map((b, idx) => {
+      const provider = b.provider || b.name || "Resolver";
+      const server = b.server || b.ip || "Unknown";
+      const avgLat = b.avg_latency_ms !== undefined ? b.avg_latency_ms : (b.avg_ms !== undefined ? b.avg_ms : 0);
+      const minLat = b.min_latency_ms !== undefined ? b.min_latency_ms : (b.min_ms !== undefined ? b.min_ms : 0);
+      const maxLat = b.max_latency_ms !== undefined ? b.max_latency_ms : (b.max_ms !== undefined ? b.max_ms : 0);
+      const rate = b.success_rate !== undefined ? b.success_rate : 100;
+
       let rating = `<span style="color: var(--success); font-weight: 600;">Fastest</span>`;
       if (idx > 0 && idx < 3) rating = `<span style="color: #38bdf8;">Optimal</span>`;
       else if (idx >= 3) rating = `<span style="color: var(--text-dim);">Standard</span>`;
 
       return `
         <tr>
-          <td><strong>${b.provider}</strong></td>
-          <td class="font-mono" style="color: var(--text-muted);">${b.server}</td>
-          <td class="font-mono"><strong style="color: #38bdf8;">${b.avg_latency_ms} ms</strong></td>
-          <td class="font-mono" style="color: var(--text-dim); font-size: 0.8rem;">${b.min_latency_ms} ms / ${b.max_latency_ms} ms</td>
-          <td><span class="badge ${b.success_rate === 100 ? 'badge-primary' : 'badge-danger'}">${b.success_rate}%</span></td>
+          <td><strong>${provider}</strong></td>
+          <td class="font-mono" style="color: var(--text-muted);">${server}</td>
+          <td class="font-mono"><strong style="color: #38bdf8;">${avgLat} ms</strong></td>
+          <td class="font-mono" style="color: var(--text-dim); font-size: 0.8rem;">${minLat} ms / ${maxLat} ms</td>
+          <td><span class="badge ${rate === 100 ? 'badge-primary' : 'badge-danger'}">${rate}%</span></td>
           <td>${rating}</td>
         </tr>
       `;
@@ -423,6 +436,7 @@ async function handleRunBenchmark() {
   } finally {
     btn.disabled = false;
     btn.innerText = "Run Latency Benchmark";
+
   }
 }
 </script>

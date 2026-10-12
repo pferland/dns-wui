@@ -21,6 +21,7 @@ class DigRequest(BaseModel):
 class PropagationRequest(BaseModel):
     query: str = Field(..., description="Domain to check propagation across global resolvers")
     rtype: str = Field(default="A", description="DNS record type to check")
+    expected_value: str | None = Field(default=None, description="Expected value to match against")
 
 
 class BenchmarkRequest(BaseModel):
@@ -69,9 +70,24 @@ async def test_global_propagation(req: PropagationRequest, _user: User = Depends
     """Query 8 global public DNS resolvers simultaneously to test record propagation."""
     try:
         results = await check_global_propagation(req.query, req.rtype)
-        return {"query": req.query, "rtype": req.rtype, "resolvers": results}
+        matched_count = 0
+        if req.expected_value:
+            exp_clean = req.expected_value.strip().rstrip(".")
+            for r in results:
+                if any(exp_clean in ans.rstrip(".") for ans in r.get("answers", [])):
+                    matched_count += 1
+        return {
+            "query": req.query,
+            "rtype": req.rtype,
+            "expected_value": req.expected_value,
+            "total_resolvers": len(results),
+            "matched_count": matched_count,
+            "results": results,
+            "resolvers": results,
+        }
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
 
 
 @router.post("/benchmark")
