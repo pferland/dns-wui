@@ -70,6 +70,65 @@
   </div>
 </div>
 
+<!-- Backups & Snapshot Restoration Panel -->
+<div style="background: #0d1117; border: 1px solid var(--border-color); border-radius: var(--radius); padding: 1.25rem; margin-bottom: 1.5rem;">
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+    <div>
+      <h3 style="font-size: 1rem; color: #f8fafc; margin-bottom: 0.2rem;">&#128190; Zone Backups & Disaster Recovery Snapshots</h3>
+      <p style="color: var(--text-dim); font-size: 0.8rem;">Create tar.gz snapshots of all zone files and named configurations with 1-click restore rollback.</p>
+    </div>
+    <div>
+      <button class="btn btn-primary btn-sm" id="btnCreateBackup" onclick="handleCreateBackup()">+ Create Full Backup</button>
+    </div>
+  </div>
+
+  <div class="data-table-container">
+    <table class="data-table" style="font-size: 0.85rem;">
+      <thead>
+        <tr>
+          <th>Archive Filename</th>
+          <th>Created Date (UTC)</th>
+          <th>Size</th>
+          <th style="text-align: right;">Actions</th>
+        </tr>
+      </thead>
+      <tbody id="backupsTableBody">
+        <tr><td colspan="4" style="text-align: center; color: var(--text-dim);">Loading backups...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Ad-Block RPZ Whitelist & Updater Panel -->
+<div style="background: #0d1117; border: 1px solid var(--border-color); border-radius: var(--radius); padding: 1.25rem; margin-bottom: 1.5rem;">
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+    <div>
+      <h3 style="font-size: 1rem; color: #f8fafc; margin-bottom: 0.2rem;">&#128737; Ad-Block RPZ Whitelist & Updater</h3>
+      <p style="color: var(--text-dim); font-size: 0.8rem;">Bypass RPZ blocking for trusted domains (<code>rpz-passthru.</code>) and refresh upstream blocklists.</p>
+    </div>
+    <div style="display: flex; gap: 0.5rem;">
+      <button class="btn btn-secondary btn-sm" id="btnUpdateAdblock" onclick="handleUpdateBlocklist()">&#8635; Update Blocklist Feed</button>
+      <button class="btn btn-primary btn-sm" onclick="openModal('addWhitelistModal')">+ Add Whitelist</button>
+    </div>
+  </div>
+
+  <div class="data-table-container">
+    <table class="data-table" style="font-size: 0.85rem;">
+      <thead>
+        <tr>
+          <th>Whitelisted Domain FQDN</th>
+          <th>Rule Action</th>
+          <th style="text-align: right;">Action</th>
+        </tr>
+      </thead>
+      <tbody id="whitelistTableBody">
+        <tr><td colspan="3" style="text-align: center; color: var(--text-dim);">Loading whitelist...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+
 <!-- Diagnostics Table -->
 <div class="data-table-container">
   <table class="data-table">
@@ -287,6 +346,217 @@ async function showRndcStatus() {
   }
 }
 
-document.addEventListener("DOMContentLoaded", loadAnalytics);
+// Backups Management
+async function loadBackups() {
+  try {
+    const res = await fetch("/api/v1/backups");
+    if (!res.ok) return;
+    const data = await res.json();
+    const tbody = document.getElementById("backupsTableBody");
+    if (!data.backups || data.backups.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="4" style="text-align: center; color: var(--text-dim); padding: 1rem;">No backup archives recorded yet.</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = data.backups.map(b => `
+      <tr>
+        <td class="font-mono"><strong>${b.filename}</strong></td>
+        <td>${new Date(b.created_at).toLocaleString()}</td>
+        <td class="font-mono">${(b.size_bytes / 1024).toFixed(1)} KB</td>
+        <td style="text-align: right;">
+          <a href="/api/v1/backups/${b.filename}/download" class="btn btn-secondary btn-sm" style="margin-right: 0.3rem;">&#8681; Download</a>
+          <button class="btn btn-warning btn-sm" onclick="handleRestoreBackup('${b.filename}')" style="margin-right: 0.3rem;">&#8635; Restore</button>
+          <button class="btn btn-danger btn-sm" onclick="handleDeleteBackup('${b.filename}')">&#128465;</button>
+        </td>
+      </tr>
+    `).join("");
+  } catch (e) {
+    console.error("Failed loading backups", e);
+  }
+}
+
+async function handleCreateBackup() {
+  const btn = document.getElementById("btnCreateBackup");
+  btn.disabled = true;
+  btn.innerText = "Creating...";
+  try {
+    const res = await fetch("/api/v1/backups", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ comment: "Manual backup snapshot" }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      showToast(`Backup ${data.filename} created!`);
+      loadBackups();
+    } else {
+      showToast(`Error: ${data.detail}`, true);
+    }
+  } catch (err) {
+    showToast(`Error: ${err.message}`, true);
+  } finally {
+    btn.disabled = false;
+    btn.innerText = "+ Create Full Backup";
+  }
+}
+
+async function handleRestoreBackup(filename) {
+  if (!confirm(`Are you sure you want to RESTORE ${filename}? This will overwrite existing zone files and reload BIND!`)) return;
+  try {
+    const res = await fetch("/api/v1/backups/restore", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ filename: filename }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      showToast(data.message);
+      setTimeout(() => window.location.reload(), 1000);
+    } else {
+      showToast(`Restore error: ${data.detail}`, true);
+    }
+  } catch (err) {
+    showToast(`Restore failed: ${err.message}`, true);
+  }
+}
+
+async function handleDeleteBackup(filename) {
+  if (!confirm(`Delete backup ${filename}?`)) return;
+  try {
+    const res = await fetch(`/api/v1/backups/${filename}`, { method: "DELETE" });
+    const data = await res.json();
+    if (res.ok) {
+      showToast(data.message);
+      loadBackups();
+    } else {
+      showToast(`Error: ${data.detail}`, true);
+    }
+  } catch (err) {
+    showToast(`Delete failed: ${err.message}`, true);
+  }
+}
+
+// Adblock Whitelist Management
+async function loadWhitelist() {
+  try {
+    const res = await fetch("/api/v1/adblock/summary");
+    if (!res.ok) return;
+    const data = await res.json();
+    const tbody = document.getElementById("whitelistTableBody");
+    if (!data.whitelist || data.whitelist.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="3" style="text-align: center; color: var(--text-dim); padding: 1rem;">No whitelisted domains active.</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = data.whitelist.map(domain => `
+      <tr>
+        <td class="font-mono"><strong>${domain}</strong></td>
+        <td><span class="badge badge-primary">RPZ Passthru</span></td>
+        <td style="text-align: right;">
+          <button class="btn btn-danger btn-sm" onclick="handleRemoveWhitelist('${domain}')">&#128465; Remove</button>
+        </td>
+      </tr>
+    `).join("");
+  } catch (e) {
+    console.error("Failed loading whitelist", e);
+  }
+}
+
+async function handleAddWhitelist(e) {
+  e.preventDefault();
+  const domain = document.getElementById("whitelistDomainInput").value.trim();
+  const btn = document.getElementById("btnAddWhitelistSubmit");
+  btn.disabled = true;
+  btn.innerText = "Adding...";
+  try {
+    const res = await fetch("/api/v1/adblock/whitelist", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ domain: domain }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      closeModal("addWhitelistModal");
+      showToast(data.message);
+      loadWhitelist();
+      loadAnalytics();
+    } else {
+      showToast(`Error: ${data.detail}`, true);
+    }
+  } catch (err) {
+    showToast(`Error: ${err.message}`, true);
+  } finally {
+    btn.disabled = false;
+    btn.innerText = "Add to Whitelist";
+  }
+}
+
+async function handleRemoveWhitelist(domain) {
+  if (!confirm(`Remove ${domain} from whitelist?`)) return;
+  try {
+    const res = await fetch(`/api/v1/adblock/whitelist/${encodeURIComponent(domain)}`, { method: "DELETE" });
+    const data = await res.json();
+    if (res.ok) {
+      showToast(data.message);
+      loadWhitelist();
+      loadAnalytics();
+    } else {
+      showToast(`Error: ${data.detail}`, true);
+    }
+  } catch (err) {
+    showToast(`Error: ${err.message}`, true);
+  }
+}
+
+async function handleUpdateBlocklist() {
+  const btn = document.getElementById("btnUpdateAdblock");
+  btn.disabled = true;
+  btn.innerText = "Refreshing Feed...";
+  try {
+    const res = await fetch("/api/v1/adblock/update", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      showToast(data.message);
+      loadAnalytics();
+    } else {
+      showToast(`Update error: ${data.detail}`, true);
+    }
+  } catch (err) {
+    showToast(`Update error: ${err.message}`, true);
+  } finally {
+    btn.disabled = false;
+    btn.innerText = "↻ Update Blocklist Feed";
+  }
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  loadAnalytics();
+  loadBackups();
+  loadWhitelist();
+});
 </script>
+
+<!-- Add Whitelist Modal -->
+<div id="addWhitelistModal" class="modal-backdrop">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3 class="modal-title">+ Add Ad-Block RPZ Whitelist</h3>
+      <button class="btn btn-secondary btn-sm" onclick="closeModal('addWhitelistModal')">&times;</button>
+    </div>
+    <form onsubmit="handleAddWhitelist(event)">
+      <div class="form-group">
+        <label for="whitelistDomainInput">Domain Name to Whitelist</label>
+        <input type="text" id="whitelistDomainInput" required placeholder="e.g. analytics.google.com or app.launchdarkly.com" class="form-control font-mono">
+        <small style="color: var(--text-dim); font-size: 0.75rem;">Adds a high-priority <code>CNAME rpz-passthru.</code> rule allowing DNS resolution for this domain.</small>
+      </div>
+      <div style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1rem;">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('addWhitelistModal')">Cancel</button>
+        <button type="submit" class="btn btn-primary" id="btnAddWhitelistSubmit">Add to Whitelist</button>
+      </div>
+    </form>
+  </div>
+</div>
 {% endblock %}
+

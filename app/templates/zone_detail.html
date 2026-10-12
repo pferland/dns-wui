@@ -21,6 +21,7 @@
 
   <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
     <button class="btn btn-secondary btn-sm" onclick="openHealthModal()">&#128065; Health Audit</button>
+    <button class="btn btn-secondary btn-sm" onclick="openDnssecModal()">&#128272; DNSSEC & DS</button>
     <button class="btn btn-secondary btn-sm" onclick="openRevisionsModal()">&#128392; Revisions & Rollback</button>
     {% if zone.zone_type not in ('slave', 'secondary') %}
       <button class="btn btn-secondary btn-sm" onclick="openEmailWizardModal()">&#9993; Email Wizard</button>
@@ -779,5 +780,110 @@ async function handleImportSubmit(e) {
     btn.innerText = "Import Records";
   }
 }
+
+// DNSSEC Inspection & DS Records
+async function openDnssecModal() {
+  openModal("dnssecModal");
+  const container = document.getElementById("dnssecContent");
+  container.innerHTML = `<div style="text-align: center; padding: 2rem; color: var(--text-muted);">Inspecting zone DNSKEY records and computing DS digests...</div>`;
+
+  try {
+    const res = await fetch(`/api/v1/zones/${encodeURIComponent(currentZone)}/dnssec`);
+    if (!res.ok) throw new Error("Failed to load DNSSEC telemetry");
+    const data = await res.json();
+
+    if (!data.signed || data.keys.length === 0) {
+      container.innerHTML = `
+        <div style="background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.2); border-radius: var(--radius); padding: 1.5rem; text-align: center;">
+          <h4 style="color: #f87171; margin-bottom: 0.5rem;">Zone is Unsigned</h4>
+          <p style="color: var(--text-dim); font-size: 0.85rem; max-width: 500px; margin: 0 auto;">
+            No <code>DNSKEY</code> resource records were detected in <strong>${currentZone}</strong>. To enable DNSSEC validation, sign the zone using BIND inline-signing (<code>dnssec-policy default;</code>) or <code>dnssec-signzone</code>.
+          </p>
+        </div>
+      `;
+      return;
+    }
+
+    let dsHtml = "";
+    if (data.ds_records && data.ds_records.length > 0) {
+      dsHtml = `
+        <div style="margin-top: 1.5rem;">
+          <h4 style="font-size: 0.9rem; color: #38bdf8; text-transform: uppercase; margin-bottom: 0.5rem;">
+            Registrar Delegation Signer (DS) Records
+          </h4>
+          <p style="color: var(--text-muted); font-size: 0.82rem; margin-bottom: 0.75rem;">
+            Provide these DS parameters to your domain registrar (e.g. Cloudflare, Namecheap, GoDaddy) to establish the parent-to-child chain of trust:
+          </p>
+          <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+            ${data.ds_records.map(ds => `
+              <div style="background: #0d1117; border: 1px solid var(--border-color); border-radius: 6px; padding: 0.85rem;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.4rem;">
+                  <span class="badge badge-primary">${ds.digest_type_name}</span>
+                  <small style="color: var(--text-dim); font-family: monospace;">Key Tag: ${ds.key_tag} | Algo: ${ds.algorithm}</small>
+                </div>
+                <div style="font-family: monospace; font-size: 0.78rem; color: #a5b4fc; word-break: break-all; background: #050811; padding: 0.5rem; border-radius: 4px; margin-bottom: 0.5rem;">
+                  ${ds.ds_string}
+                </div>
+                <div style="display: flex; justify-content: flex-end;">
+                  <button type="button" class="btn btn-secondary btn-sm" onclick="navigator.clipboard.writeText('${ds.ds_string}'); showToast('DS record copied to clipboard!');">
+                    &#128203; Copy DS Record
+                  </button>
+                </div>
+              </div>
+            `).join("")}
+          </div>
+        </div>
+      `;
+    }
+
+    container.innerHTML = `
+      <div style="background: rgba(34, 197, 94, 0.1); border: 1px solid rgba(34, 197, 94, 0.2); border-radius: var(--radius); padding: 1rem; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.75rem;">
+        <span style="font-size: 1.4rem;">&#128272;</span>
+        <div>
+          <strong style="color: #4ade80;">DNSSEC Active & Verified</strong>
+          <div style="color: var(--text-dim); font-size: 0.8rem;">Found ${data.keys.length} DNSKEY record(s) in zone file.</div>
+        </div>
+      </div>
+
+      <div class="data-table-container">
+        <table class="data-table" style="font-size: 0.85rem;">
+          <thead>
+            <tr>
+              <th>Type</th>
+              <th>Key Tag</th>
+              <th>Algorithm</th>
+              <th>Flags</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${data.keys.map(k => `
+              <tr>
+                <td><strong>${k.key_type}</strong></td>
+                <td class="font-mono" style="color: #38bdf8;">${k.key_tag}</td>
+                <td>${k.algorithm_name}</td>
+                <td class="font-mono">${k.flags}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+      ${dsHtml}
+    `;
+  } catch (err) {
+    container.innerHTML = `<div style="color: var(--danger); padding: 1rem;">Failed to fetch DNSSEC data: ${err.message}</div>`;
+  }
+}
 </script>
+
+<!-- DNSSEC & Registrar DS Modal -->
+<div id="dnssecModal" class="modal-backdrop">
+  <div class="modal-box" style="max-width: 650px;">
+    <div class="modal-header">
+      <h3 class="modal-title">&#128272; DNSSEC Keys & Registrar DS Records</h3>
+      <button class="btn btn-secondary btn-sm" onclick="closeModal('dnssecModal')">&times;</button>
+    </div>
+    <div id="dnssecContent" style="padding-top: 0.5rem;"></div>
+  </div>
+</div>
 {% endblock %}
+

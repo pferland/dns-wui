@@ -8,6 +8,7 @@ from app.models.user import User
 from app.models.audit import AuditLog  # noqa: F401
 from app.models.revision import ZoneRevision  # noqa: F401
 from app.models.api_key import ApiKey  # noqa: F401
+from app.models.ddns import DdnsToken  # noqa: F401
 from app.services.security import hash_password
 
 settings.ensure_directories()

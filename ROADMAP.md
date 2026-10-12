@@ -53,6 +53,13 @@ This document tracks prioritized features and operational capabilities for the B
 
 - [x] **RPZ Ad-Block & System Telemetry Analytics**
   - Telemetry cards for `rpz.adblock.spam.local` showing total blocked domain count, zone file size, split-horizon overrides count, and disk storage usage.
+- [x] **Ad-Block Whitelist & Automated Feed Updater**
+  - Instant domain unblocking via RFC-compliant `CNAME rpz-passthru.` overrides.
+  - Direct upstream blocklist fetching and recompilation from remote hosts sources (e.g. StevenBlack hosts).
+- [x] **Global DNS Propagation Checker**
+  - Probes 8 worldwide public nameservers (Cloudflare, Google, Quad9, OpenDNS, Level3, AdGuard, Hurricane Electric, Local BIND) in parallel with match-rate verification and latency tracking.
+- [x] **Upstream Latency & Jitter Benchmark**
+  - Multi-round latency sampling across public DNS providers to pinpoint the fastest forwarders for local caching.
 - [x] **Zone Health Checker**
   - Automated diagnostic audits calculating a health score (0-100) with categorized issue reports (SOA validity, Nameserver redundancy, Glue records, Email security compliance).
 - [ ] **BIND 9 Native Statistics Channel Live Graphs**
@@ -65,6 +72,14 @@ This document tracks prioritized features and operational capabilities for the B
 - [x] **API Keys & Automation Tokens**
   - Long-lived API bearer tokens (`wui_...`) for CI/CD pipelines, Ansible, Terraform, and automated Certbot ACME DNS-01 validation.
   - Full management interface (`/api-keys`) supporting role scoping (`operator`, `admin`), expiration dates, and immediate revocation.
+- [x] **Dynamic DNS (DDNS) Router Service & Webhooks**
+  - Standardized RFC/router-compatible DDNS endpoint (`/api/v1/ddns/update?token=...&myip=...`) for edge routers (pfSense, OpenWrt, UniFi, Mikrotik, curl).
+  - Automatically updates targeted A/AAAA records with optional PTR reverse synchronization.
+- [x] **DNSSEC Key Inspection & Registrar DS Generator**
+  - Parses zone `DNSKEY` records, computes RFC 4034 Key Tags, and calculates SHA-1 & SHA-256 Delegation Signer (DS) records ready for registrars (Cloudflare, GoDaddy, Namecheap).
+- [x] **Automated Server Backups & Disaster Recovery Snapshots**
+  - Full archive snapshots (`.tar.gz`) of all zone files and BIND configuration files in `data/backups/`.
+  - 1-click archive downloads, full rollbacks, and file deletion.
 - [x] **Secondary / Replica Zone Management**
   - AXFR/IXFR transfer initiation and monitoring via `rndc retransfer <zone>`.
 - [x] **Role-Based Access Control (RBAC)**
@@ -72,3 +87,4 @@ This document tracks prioritized features and operational capabilities for the B
     - *Super Admin*: Full server configuration, RNDC controls, API keys, raw file editor, user management.
     - *Operator*: Record editing and zone operations on managed zones.
     - *Viewer*: Read-only record search, inspection, and DNS dig queries.
+

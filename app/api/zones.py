@@ -723,3 +723,22 @@ async def update_raw_zone(
         details="Updated zone file directly via raw editor",
     )
     return {"message": msg}
+
+
+@router.get("/{zone_name}/dnssec")
+async def get_zone_dnssec(
+    zone_name: str,
+    user: User = Depends(require_role("viewer")),
+):
+    """Retrieve DNSSEC keys and generated registrar DS records for a zone."""
+    from app.bind.dnssec import get_zone_dnssec_info
+
+    zones = get_all_zones()
+    clean_target = zone_name.strip().rstrip(".").lower()
+    matched = next((z for z in zones if z.name.rstrip(".").lower() == clean_target), None)
+    if not matched or not matched.file_path:
+        raise HTTPException(status_code=404, detail="Zone or zone file not found")
+
+    return get_zone_dnssec_info(matched.file_path, matched.name)
+
+

@@ -64,6 +64,12 @@ async def rndc_status() -> tuple[bool, str]:
     return await execute_rndc_cmd("status")
 
 
+async def reload_bind() -> tuple[bool, str]:
+    """Reload entire BIND server configuration and zones: rndc reload."""
+    return await execute_rndc_cmd("reload")
+
+
+
 async def rndc_dumpdb() -> tuple[bool, str]:
     """Dump cache to dump file: rndc dumpdb -all."""
     return await execute_rndc_cmd("dumpdb", "-all")

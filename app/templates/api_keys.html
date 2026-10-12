@@ -36,6 +36,40 @@
   </table>
 </div>
 
+<!-- Dynamic DNS (DDNS) Tokens Section -->
+<div style="margin-top: 2.5rem; margin-bottom: 1rem; display: flex; justify-content: space-between; align-items: center;">
+  <div>
+    <h2 style="font-size: 1.25rem; font-weight: 600; color: #f8fafc;">Dynamic DNS (DDNS) Update Tokens</h2>
+    <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.2rem;">
+      Lightweight router & webhook tokens to update A/AAAA records dynamically (compatible with pfSense, OpenWrt, UniFi, Mikrotik, curl).
+    </p>
+  </div>
+  <div>
+    <button class="btn btn-primary btn-sm" onclick="openModal('addDdnsModal')">+ New DDNS Token</button>
+  </div>
+</div>
+
+<div class="data-table-container">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th style="width: 25%;">Token Label</th>
+        <th style="width: 20%;">Target Zone</th>
+        <th style="width: 18%;">Host Record</th>
+        <th style="width: 15%;">Last Active IP</th>
+        <th style="width: 12%;">Last Updated</th>
+        <th style="width: 10%; text-align: right;">Actions</th>
+      </tr>
+    </thead>
+    <tbody id="ddnsTableBody">
+      <tr>
+        <td colspan="6" style="text-align: center; padding: 1.5rem; color: var(--text-dim);">Loading DDNS Tokens...</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+
 <!-- Generate Key Modal -->
 <div id="addKeyModal" class="modal-backdrop">
   <div class="modal-box">
@@ -198,6 +232,118 @@ function copyRevealedKey() {
   });
 }
 
-document.addEventListener("DOMContentLoaded", loadApiKeys);
+// DDNS Management
+async function loadDdnsTokens() {
+  try {
+    const res = await fetch("/api/v1/ddns/tokens");
+    if (!res.ok) return;
+    const tokens = await res.json();
+    const tbody = document.getElementById("ddnsTableBody");
+    if (!tokens || tokens.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-dim); padding: 1.5rem;">No Dynamic DNS tokens configured.</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = tokens.map(t => `
+      <tr>
+        <td><strong>${t.name}</strong></td>
+        <td><code class="font-mono">${t.zone_name}</code></td>
+        <td><span class="badge badge-primary">${t.record_name}</span></td>
+        <td class="font-mono">${t.last_ip ? `<code style="color: #38bdf8;">${t.last_ip}</code>` : '<span style="color: var(--text-dim);">Never updated</span>'}</td>
+        <td style="color: var(--text-muted); font-size: 0.8rem;">${t.last_updated_at ? new Date(t.last_updated_at).toLocaleString() : 'Never'}</td>
+        <td style="text-align: right;">
+          <button class="btn btn-danger btn-sm" onclick="revokeDdnsToken(${t.id}, '${t.name}')">&#128465;</button>
+        </td>
+      </tr>
+    `).join("");
+  } catch (e) {
+    console.error("Failed loading DDNS tokens", e);
+  }
+}
+
+async function handleCreateDdnsToken(e) {
+  e.preventDefault();
+  const btn = document.getElementById("btnAddDdnsSubmit");
+  btn.disabled = true;
+  btn.innerText = "Creating...";
+
+  const name = document.getElementById("ddnsName").value.trim();
+  const zone = document.getElementById("ddnsZone").value.trim();
+  const host = document.getElementById("ddnsHost").value.trim();
+
+  try {
+    const res = await fetch("/api/v1/ddns/tokens", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: name, zone_name: zone, record_name: host }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      closeModal("addDdnsModal");
+      document.getElementById("ddnsForm").reset();
+      document.getElementById("revealedSecret").innerText = data.update_url;
+      openModal("keyRevealModal");
+      loadDdnsTokens();
+    } else {
+      showToast(`Error: ${data.detail}`, true);
+    }
+  } catch (err) {
+    showToast(`Error: ${err.message}`, true);
+  } finally {
+    btn.disabled = false;
+    btn.innerText = "Create DDNS Token";
+  }
+}
+
+async function revokeDdnsToken(id, name) {
+  if (!confirm(`Delete DDNS token '${name}'?`)) return;
+  try {
+    const res = await fetch(`/api/v1/ddns/tokens/${id}`, { method: "DELETE" });
+    const data = await res.json();
+    if (res.ok) {
+      showToast(data.message || "DDNS Token deleted");
+      loadDdnsTokens();
+    } else {
+      showToast(`Error: ${data.detail}`, true);
+    }
+  } catch (err) {
+    showToast(`Failed: ${err.message}`, true);
+  }
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  loadApiKeys();
+  loadDdnsTokens();
+});
 </script>
+
+<!-- Add DDNS Modal -->
+<div id="addDdnsModal" class="modal-backdrop">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3 class="modal-title">Create Dynamic DNS (DDNS) Token</h3>
+      <button class="btn btn-secondary btn-sm" onclick="closeModal('addDdnsModal')">&times;</button>
+    </div>
+    <form id="ddnsForm" onsubmit="handleCreateDdnsToken(event)">
+      <div class="form-group">
+        <label for="ddnsName">Token Label</label>
+        <input type="text" id="ddnsName" required placeholder="e.g. Home Router WAN or Mikrotik Gateway" class="form-control">
+      </div>
+      <div class="form-group" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+        <div>
+          <label for="ddnsZone">Target Zone</label>
+          <input type="text" id="ddnsZone" required placeholder="e.g. mycorp.com" class="form-control font-mono">
+        </div>
+        <div>
+          <label for="ddnsHost">Record Name (Host)</label>
+          <input type="text" id="ddnsHost" required placeholder="e.g. vpn, router, or @" class="form-control font-mono">
+        </div>
+      </div>
+      <div style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1rem;">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('addDdnsModal')">Cancel</button>
+        <button type="submit" class="btn btn-primary" id="btnAddDdnsSubmit">Create DDNS Token</button>
+      </div>
+    </form>
+  </div>
+</div>
 {% endblock %}
+

@@ -1,3 +1,4 @@
+import asyncio
 import time
 from dataclasses import dataclass, asdict
 from typing import Any
@@ -7,6 +8,17 @@ import dns.rdatatype
 import dns.flags
 from app.bind.parser import parse_zone_text, ZoneModel
 from app.bind.validator import validate_zone_text
+
+GLOBAL_RESOLVERS = [
+    {"name": "Local BIND 9", "ip": "127.0.0.1", "location": "Local Host"},
+    {"name": "Cloudflare", "ip": "1.1.1.1", "location": "Global Anycast"},
+    {"name": "Google Public DNS", "ip": "8.8.8.8", "location": "Global Anycast"},
+    {"name": "Quad9 Security", "ip": "9.9.9.9", "location": "Zurich / Anycast"},
+    {"name": "Cisco OpenDNS", "ip": "208.67.222.222", "location": "Global Anycast"},
+    {"name": "AdGuard Public", "ip": "94.140.14.14", "location": "Cyprus / Global"},
+    {"name": "Hurricane Electric", "ip": "74.82.42.42", "location": "Fremont, CA"},
+    {"name": "Level3 / Lumen", "ip": "4.2.2.2", "location": "Tier 1 Backbone"},
+]
 
 
 @dataclass
@@ -102,6 +114,75 @@ def execute_dns_query(
     )
 
 
+async def check_global_propagation(query: str, rtype: str = "A") -> list[dict[str, Any]]:
+    """Query global resolvers in parallel and compare propagation status."""
+    async def query_one(resolver):
+        res = await asyncio.to_thread(execute_dns_query, query, rtype, resolver["ip"], 53, 3.5)
+        answers_str = [a.rdata for a in res.answers]
+        return {
+            "name": resolver["name"],
+            "ip": resolver["ip"],
+            "location": resolver["location"],
+            "status": res.status,
+            "response_time_ms": res.response_time_ms,
+            "answers": answers_str,
+        }
+
+    tasks = [query_one(r) for r in GLOBAL_RESOLVERS]
+    results = await asyncio.gather(*tasks)
+
+    # Reference local answer (first item)
+    local_answers = set(results[0]["answers"]) if results else set()
+
+    for item in results:
+        curr_set = set(item["answers"])
+        if item["status"] == "NOERROR" and curr_set and curr_set == local_answers:
+            item["matches_local"] = True
+        elif not local_answers and item["status"] == "NOERROR":
+            item["matches_local"] = True
+        else:
+            item["matches_local"] = False
+
+    return results
+
+
+async def benchmark_resolvers(query: str = "google.com", rounds: int = 5) -> list[dict[str, Any]]:
+    """Benchmark query latencies across Local BIND and major public resolvers."""
+    target_resolvers = [
+        {"name": "Local BIND 9", "ip": "127.0.0.1"},
+        {"name": "Cloudflare", "ip": "1.1.1.1"},
+        {"name": "Google DNS", "ip": "8.8.8.8"},
+        {"name": "Quad9", "ip": "9.9.9.9"},
+    ]
+
+    bench_results = []
+    for r in target_resolvers:
+        latencies = []
+        for _ in range(rounds):
+            res = await asyncio.to_thread(execute_dns_query, query, "A", r["ip"], 53, 2.0)
+            if not res.status.startswith("ERROR"):
+                latencies.append(res.response_time_ms)
+        if latencies:
+            avg_lat = round(sum(latencies) / len(latencies), 2)
+            min_lat = round(min(latencies), 2)
+            max_lat = round(max(latencies), 2)
+            jitter = round(max_lat - min_lat, 2)
+        else:
+            avg_lat, min_lat, max_lat, jitter = 0, 0, 0, 0
+
+        bench_results.append({
+            "name": r["name"],
+            "ip": r["ip"],
+            "avg_ms": avg_lat,
+            "min_ms": min_lat,
+            "max_ms": max_lat,
+            "jitter_ms": jitter,
+            "samples": len(latencies),
+        })
+
+    return sorted(bench_results, key=lambda x: x["avg_ms"])
+
+
 @dataclass
 class PreFlightIssue:
     level: str  # "error", "warning", "info"
@@ -152,7 +233,6 @@ async def lint_zone_content(origin: str, content: str) -> PreFlightResult:
     for r in model.records:
         if r.rtype in ("CNAME", "MX", "NS", "PTR", "SRV"):
             target = r.rdata.strip().split()[-1]
-            # If target contains a dot but no trailing dot, might unintentionally append origin
             if "." in target and not target.endswith(".") and not target.replace(".", "").isdigit():
                 issues.append(PreFlightIssue(
                     level="warning",

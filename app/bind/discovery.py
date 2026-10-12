@@ -73,10 +73,27 @@ def find_named_options_dir(
         found = find_named_options_dir(inc_p, visited=visited)
         if found:
             return found
-    return None
+def get_named_conf_paths() -> list[Path]:
+    """Return list of main and included named.conf paths that exist."""
+    conf = settings.NAMED_CONF
+    paths = [conf]
+    if not conf.exists():
+        return paths
+
+    raw_content = conf.read_text(encoding="utf-8")
+    content = strip_bind_comments(raw_content)
+    for inc_match in INCLUDE_PATTERN.finditer(content):
+        inc_raw = inc_match.group(1).strip()
+        inc_p = Path(inc_raw)
+        if not inc_p.is_absolute():
+            inc_p = conf.parent / inc_p
+        if inc_p.exists() and inc_p not in paths:
+            paths.append(inc_p)
+    return paths
 
 
 def parse_named_conf(
+
     conf_path: Path,
     options_dir: Path | None = None,
     visited: set[Path] | None = None,

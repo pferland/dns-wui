@@ -1,71 +1,179 @@
 {% extends "base.html" %}
 
-{% block title %}DNS Diagnostics & Dig - BIND 9 Manager{% endblock %}
+{% block title %}DNS Diagnostics & Tools - BIND 9 Manager{% endblock %}
 
 {% block content %}
 <div class="page-header">
   <div>
-    <h1 class="page-title">DNS Diagnostics & Dig Tool</h1>
+    <h1 class="page-title">DNS Diagnostics & Tools</h1>
     <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.25rem;">
-      Query local BIND (<code>127.0.0.1:53</code>) and upstream resolvers in real-time with authoritative telemetry and side-by-side comparison.
+      Query resolvers, benchmark latency performance across top providers, and verify global worldwide propagation in real time.
     </p>
   </div>
 </div>
 
-<!-- Query Form -->
-<div style="background: #0f172a; border: 1px solid var(--border-color); border-radius: var(--radius); padding: 1.25rem; margin-bottom: 1.5rem;">
-  <form id="digForm" onsubmit="handleDigSubmit(event)" style="display: grid; grid-template-columns: 2fr 1fr 1.5fr auto auto; gap: 0.75rem; align-items: end;">
-    <div class="form-group" style="margin-bottom: 0;">
-      <label for="digQuery">Target Hostname / IP</label>
-      <input type="text" id="digQuery" required placeholder="e.g. google.com, nas.home.lab, 192.168.1.1" class="form-control font-mono">
-    </div>
-
-    <div class="form-group" style="margin-bottom: 0;">
-      <label for="digType">Query Type</label>
-      <select id="digType" class="form-control">
-        <option value="A" selected>A (IPv4)</option>
-        <option value="AAAA">AAAA (IPv6)</option>
-        <option value="CNAME">CNAME (Alias)</option>
-        <option value="MX">MX (Mail)</option>
-        <option value="TXT">TXT (Text/SPF/DKIM)</option>
-        <option value="NS">NS (Nameserver)</option>
-        <option value="SOA">SOA (Authority)</option>
-        <option value="PTR">PTR (Reverse)</option>
-        <option value="ANY">ANY (All)</option>
-      </select>
-    </div>
-
-    <div class="form-group" style="margin-bottom: 0;">
-      <label for="digServer">Nameserver</label>
-      <select id="digServer" class="form-control">
-        <option value="127.0.0.1" selected>Local BIND (127.0.0.1:53)</option>
-        <option value="1.1.1.1">Cloudflare (1.1.1.1)</option>
-        <option value="8.8.8.8">Google DNS (8.8.8.8)</option>
-        <option value="9.9.9.9">Quad9 (9.9.9.9)</option>
-      </select>
-    </div>
-
-    <div>
-      <button type="submit" class="btn btn-primary" id="btnDig">Resolve Record</button>
-    </div>
-    <div>
-      <button type="button" class="btn btn-secondary" onclick="handleCompareSubmit()">Compare vs 1.1.1.1</button>
-    </div>
-  </form>
+<!-- Tabs -->
+<div style="display: flex; gap: 0.5rem; margin-bottom: 1.5rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.5rem;">
+  <button class="btn btn-primary btn-sm" id="tabDigBtn" onclick="switchToolsTab('dig')">&#128269; DNS Dig Resolver</button>
+  <button class="btn btn-secondary btn-sm" id="tabPropBtn" onclick="switchToolsTab('propagation')">&#127758; Global Propagation Checker</button>
+  <button class="btn btn-secondary btn-sm" id="tabBenchBtn" onclick="switchToolsTab('benchmark')">&#9889; Upstream Latency Benchmark</button>
 </div>
 
-<!-- Comparison / Results Grid -->
-<div id="resultsContainer" style="display: none; margin-bottom: 2rem;">
-  <div id="singleResultBox"></div>
-  <div id="compareResultGrid" style="display: none; grid-template-columns: 1fr 1fr; gap: 1.5rem;">
-    <div id="localResultBox"></div>
-    <div id="upstreamResultBox"></div>
+<!-- SECTION 1: DIG RESOLVER -->
+<div id="sectionDig">
+  <div style="background: #0f172a; border: 1px solid var(--border-color); border-radius: var(--radius); padding: 1.25rem; margin-bottom: 1.5rem;">
+    <form id="digForm" onsubmit="handleDigSubmit(event)" style="display: grid; grid-template-columns: 2fr 1fr 1.5fr auto auto; gap: 0.75rem; align-items: end;">
+      <div class="form-group" style="margin-bottom: 0;">
+        <label for="digQuery">Target Hostname / IP</label>
+        <input type="text" id="digQuery" required placeholder="e.g. google.com, nas.home.lab, 192.168.1.1" class="form-control font-mono">
+      </div>
+
+      <div class="form-group" style="margin-bottom: 0;">
+        <label for="digType">Query Type</label>
+        <select id="digType" class="form-control">
+          <option value="A" selected>A (IPv4)</option>
+          <option value="AAAA">AAAA (IPv6)</option>
+          <option value="CNAME">CNAME (Alias)</option>
+          <option value="MX">MX (Mail)</option>
+          <option value="TXT">TXT (Text/SPF/DKIM)</option>
+          <option value="NS">NS (Nameserver)</option>
+          <option value="SOA">SOA (Authority)</option>
+          <option value="PTR">PTR (Reverse)</option>
+          <option value="ANY">ANY (All)</option>
+        </select>
+      </div>
+
+      <div class="form-group" style="margin-bottom: 0;">
+        <label for="digServer">Nameserver</label>
+        <select id="digServer" class="form-control">
+          <option value="127.0.0.1" selected>Local BIND (127.0.0.1:53)</option>
+          <option value="1.1.1.1">Cloudflare (1.1.1.1)</option>
+          <option value="8.8.8.8">Google DNS (8.8.8.8)</option>
+          <option value="9.9.9.9">Quad9 (9.9.9.9)</option>
+        </select>
+      </div>
+
+      <div>
+        <button type="submit" class="btn btn-primary" id="btnDig">Resolve Record</button>
+      </div>
+      <div>
+        <button type="button" class="btn btn-secondary" onclick="handleCompareSubmit()">Compare vs 1.1.1.1</button>
+      </div>
+    </form>
+  </div>
+
+  <div id="resultsContainer" style="display: none; margin-bottom: 2rem;">
+    <div id="singleResultBox"></div>
+    <div id="compareResultGrid" style="display: none; grid-template-columns: 1fr 1fr; gap: 1.5rem;">
+      <div id="localResultBox"></div>
+      <div id="upstreamResultBox"></div>
+    </div>
+  </div>
+</div>
+
+<!-- SECTION 2: GLOBAL PROPAGATION CHECKER -->
+<div id="sectionPropagation" style="display: none;">
+  <div style="background: #0f172a; border: 1px solid var(--border-color); border-radius: var(--radius); padding: 1.25rem; margin-bottom: 1.5rem;">
+    <form id="propForm" onsubmit="handlePropSubmit(event)" style="display: flex; gap: 0.75rem; align-items: flex-end; flex-wrap: wrap;">
+      <div class="form-group" style="margin-bottom: 0; min-width: 250px; flex: 1;">
+        <label for="propQuery">Hostname to Probe</label>
+        <input type="text" id="propQuery" required placeholder="e.g. example.com, mydomain.net" class="form-control font-mono">
+      </div>
+      <div class="form-group" style="margin-bottom: 0; width: 140px;">
+        <label for="propType">Record Type</label>
+        <select id="propType" class="form-control">
+          <option value="A" selected>A (IPv4)</option>
+          <option value="AAAA">AAAA (IPv6)</option>
+          <option value="CNAME">CNAME</option>
+          <option value="MX">MX</option>
+          <option value="TXT">TXT</option>
+          <option value="NS">NS</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin-bottom: 0; min-width: 180px;">
+        <label for="propExpected">Expected Value (Optional)</label>
+        <input type="text" id="propExpected" placeholder="e.g. 1.2.3.4 (checks match)" class="form-control font-mono">
+      </div>
+      <div>
+        <button type="submit" class="btn btn-primary" id="btnCheckProp">&#127758; Check Worldwide Propagation</button>
+      </div>
+    </form>
+  </div>
+
+  <div id="propResultsContainer" style="display: none; margin-bottom: 2rem;">
+    <div id="propSummaryBar" style="background: #0d1117; border: 1px solid var(--border-color); border-radius: var(--radius); padding: 1rem 1.25rem; margin-bottom: 1rem; display: flex; justify-content: space-between; align-items: center;">
+      <div>
+        <strong id="propDomainLabel" style="font-size: 1.05rem; color: #f8fafc;"></strong>
+        <span id="propMatchBadge" style="margin-left: 0.75rem;"></span>
+      </div>
+      <small style="color: var(--text-dim);" id="propTimeLabel"></small>
+    </div>
+
+    <div class="data-table-container">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th style="width: 22%;">DNS Resolver Provider</th>
+            <th style="width: 16%;">IP Endpoint</th>
+            <th style="width: 12%;">Latency</th>
+            <th style="width: 12%;">Status</th>
+            <th>Returned Answers (RDATA)</th>
+          </tr>
+        </thead>
+        <tbody id="propResultsTable"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- SECTION 3: UPSTREAM LATENCY BENCHMARK -->
+<div id="sectionBenchmark" style="display: none;">
+  <div style="background: #0f172a; border: 1px solid var(--border-color); border-radius: var(--radius); padding: 1.25rem; margin-bottom: 1.5rem; display: flex; justify-content: space-between; align-items: center;">
+    <div>
+      <h3 style="font-size: 1rem; color: #f8fafc; margin-bottom: 0.2rem;">Upstream DNS Latency & Jitter Benchmark</h3>
+      <p style="color: var(--text-dim); font-size: 0.82rem;">Runs 3 queries per resolver measuring Min, Avg, and Max response latency to identify optimal forwarders.</p>
+    </div>
+    <div style="display: flex; gap: 0.5rem; align-items: center;">
+      <input type="text" id="benchTarget" value="cloudflare.com" placeholder="Target domain" class="form-control font-mono" style="width: 160px; font-size: 0.85rem;">
+      <button type="button" class="btn btn-primary btn-sm" id="btnRunBenchmark" onclick="handleRunBenchmark()">&#9889; Run Latency Benchmark</button>
+    </div>
+  </div>
+
+  <div id="benchmarkContainer" style="display: none;">
+    <div class="data-table-container">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th style="width: 25%;">Resolver Provider</th>
+            <th style="width: 18%;">IP Address</th>
+            <th style="width: 15%;">Avg Latency</th>
+            <th style="width: 14%;">Min / Max</th>
+            <th style="width: 12%;">Success Rate</th>
+            <th>Performance Rating</th>
+          </tr>
+        </thead>
+        <tbody id="benchmarkTableBody"></tbody>
+      </table>
+    </div>
   </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
+function switchToolsTab(tab) {
+  const tabs = ['dig', 'propagation', 'benchmark'];
+  tabs.forEach(t => {
+    const sec = document.getElementById(`section${t.charAt(0).toUpperCase() + t.slice(1)}`);
+    const btn = document.getElementById(`tab${t.charAt(0).toUpperCase() + t.slice(1).slice(0, 4)}Btn`) || document.getElementById(`tab${t.charAt(0).toUpperCase() + t.slice(1)}Btn`);
+    if (sec) sec.style.display = (t === tab) ? 'block' : 'none';
+  });
+
+  document.getElementById("tabDigBtn").className = tab === 'dig' ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm';
+  document.getElementById("tabPropBtn").className = tab === 'propagation' ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm';
+  document.getElementById("tabBenchBtn").className = tab === 'benchmark' ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm';
+}
+
 async function queryDns(query, rtype, server) {
   const res = await fetch("/api/v1/tools/dig", {
     method: "POST",
@@ -204,6 +312,117 @@ async function handleCompareSubmit() {
     upstreamBox.innerHTML = renderResultCard(upstreamRes, "Cloudflare Public DNS (1.1.1.1)");
   } catch (err) {
     showToast(`Compare failed: ${err.message}`, true);
+  }
+}
+
+async function handlePropSubmit(e) {
+  e.preventDefault();
+  const btn = document.getElementById("btnCheckProp");
+  btn.disabled = true;
+  btn.innerText = "Querying 8 Worldwide Resolvers...";
+
+  const query = document.getElementById("propQuery").value.trim();
+  const rtype = document.getElementById("propType").value;
+  const expected = document.getElementById("propExpected").value.trim();
+
+  const container = document.getElementById("propResultsContainer");
+  const tbody = document.getElementById("propResultsTable");
+  container.style.display = "block";
+  tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; padding: 1.5rem; color: var(--text-muted);">Probing global public nameservers in parallel...</td></tr>`;
+
+  try {
+    const res = await fetch("/api/v1/tools/propagation", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query: query, rtype: rtype, expected_value: expected || null }),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || "Propagation check failed");
+    }
+    const data = await res.json();
+
+    document.getElementById("propDomainLabel").innerText = `${data.query} (${data.rtype})`;
+    const badge = document.getElementById("propMatchBadge");
+    if (data.expected_value) {
+      const matchPct = Math.round((data.matched_count / data.total_resolvers) * 100);
+      badge.innerHTML = `<span class="badge ${matchPct === 100 ? 'badge-primary' : 'badge-warning'}">${matchPct}% Propagated (${data.matched_count}/${data.total_resolvers})</span>`;
+    } else {
+      badge.innerHTML = `<span class="badge badge-secondary">${data.total_resolvers} Global Resolvers Polled</span>`;
+    }
+
+    tbody.innerHTML = data.results.map(r => {
+      const isOk = r.status === "NOERROR";
+      const answersStr = r.answers && r.answers.length > 0 
+        ? r.answers.map(a => `<code style="color: #a5b4fc; background: rgba(99,102,241,0.1); padding: 0.15rem 0.4rem; border-radius: 4px; margin-right: 0.3rem;">${a}</code>`).join(" ")
+        : `<span style="color: var(--text-dim); font-style: italic;">No answers</span>`;
+
+      return `
+        <tr>
+          <td><strong>${r.provider}</strong></td>
+          <td class="font-mono" style="color: var(--text-muted);">${r.server}</td>
+          <td class="font-mono"><span style="background: rgba(255,255,255,0.05); padding: 0.2rem 0.4rem; border-radius: 4px;">${r.latency_ms} ms</span></td>
+          <td>
+            <span style="color: ${isOk ? 'var(--success)' : 'var(--danger)'}; font-weight: 600;">
+              ${r.status}
+            </span>
+          </td>
+          <td>${answersStr}</td>
+        </tr>
+      `;
+    }).join("");
+  } catch (err) {
+    showToast(`Propagation check failed: ${err.message}`, true);
+  } finally {
+    btn.disabled = false;
+    btn.innerText = "Check Worldwide Propagation";
+  }
+}
+
+async function handleRunBenchmark() {
+  const btn = document.getElementById("btnRunBenchmark");
+  btn.disabled = true;
+  btn.innerText = "Benchmarking...";
+
+  const target = document.getElementById("benchTarget").value.trim() || "cloudflare.com";
+  const container = document.getElementById("benchmarkContainer");
+  const tbody = document.getElementById("benchmarkTableBody");
+  container.style.display = "block";
+  tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; padding: 1.5rem; color: var(--text-muted);">Benchmarking resolvers with 3 samples each...</td></tr>`;
+
+  try {
+    const res = await fetch("/api/v1/tools/benchmark", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query: target, rounds: 3 }),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || "Benchmark failed");
+    }
+    const data = await res.json();
+
+    tbody.innerHTML = data.benchmarks.map((b, idx) => {
+      let rating = `<span style="color: var(--success); font-weight: 600;">Fastest</span>`;
+      if (idx > 0 && idx < 3) rating = `<span style="color: #38bdf8;">Optimal</span>`;
+      else if (idx >= 3) rating = `<span style="color: var(--text-dim);">Standard</span>`;
+
+      return `
+        <tr>
+          <td><strong>${b.provider}</strong></td>
+          <td class="font-mono" style="color: var(--text-muted);">${b.server}</td>
+          <td class="font-mono"><strong style="color: #38bdf8;">${b.avg_latency_ms} ms</strong></td>
+          <td class="font-mono" style="color: var(--text-dim); font-size: 0.8rem;">${b.min_latency_ms} ms / ${b.max_latency_ms} ms</td>
+          <td><span class="badge ${b.success_rate === 100 ? 'badge-primary' : 'badge-danger'}">${b.success_rate}%</span></td>
+          <td>${rating}</td>
+        </tr>
+      `;
+    }).join("");
+  } catch (err) {
+    showToast(`Benchmark error: ${err.message}`, true);
+  } finally {
+    btn.disabled = false;
+    btn.innerText = "Run Latency Benchmark";
   }
 }
 </script>

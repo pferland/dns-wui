@@ -129,11 +129,12 @@ async def log_audit(
     audit_entry = AuditLog(
         username=username,
         action=action,
-        zone_name=zone_name,
+        zone_name=zone_name or "SYSTEM",
         record_name=record_name,
         record_type=record_type,
         details=details,
         status=status,
     )
+
     session.add(audit_entry)
     await session.commit()

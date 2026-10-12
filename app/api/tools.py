@@ -2,7 +2,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from app.api.deps import get_current_user
 from app.models.user import User
-from app.bind.tools import execute_dns_query, DigResponse
+from app.bind.tools import (
+    execute_dns_query,
+    check_global_propagation,
+    benchmark_resolvers,
+)
 
 router = APIRouter(prefix="/tools", tags=["tools"])
 
@@ -12,6 +16,16 @@ class DigRequest(BaseModel):
     rtype: str = Field(default="A", description="DNS record type (A, AAAA, CNAME, MX, TXT, NS, SOA, PTR, ANY)")
     server: str = Field(default="127.0.0.1", description="DNS server to query (127.0.0.1, 1.1.1.1, 8.8.8.8, etc.)")
     port: int = Field(default=53, description="DNS port (default 53)")
+
+
+class PropagationRequest(BaseModel):
+    query: str = Field(..., description="Domain to check propagation across global resolvers")
+    rtype: str = Field(default="A", description="DNS record type to check")
+
+
+class BenchmarkRequest(BaseModel):
+    query: str = Field(default="google.com", description="Domain to query for latency benchmarking")
+    rounds: int = Field(default=5, ge=1, le=20, description="Rounds of consecutive queries")
 
 
 @router.post("/dig")
@@ -46,5 +60,25 @@ async def dig_lookup(req: DigRequest, _user: User = Depends(get_current_user)):
             ],
             "raw_text": res.raw_text,
         }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/propagation")
+async def test_global_propagation(req: PropagationRequest, _user: User = Depends(get_current_user)):
+    """Query 8 global public DNS resolvers simultaneously to test record propagation."""
+    try:
+        results = await check_global_propagation(req.query, req.rtype)
+        return {"query": req.query, "rtype": req.rtype, "resolvers": results}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/benchmark")
+async def test_resolver_benchmark(req: BenchmarkRequest, _user: User = Depends(get_current_user)):
+    """Benchmark latency and jitter against Local BIND and major public resolvers."""
+    try:
+        benchmarks = await benchmark_resolvers(req.query, req.rounds)
+        return {"query": req.query, "rounds": req.rounds, "benchmarks": benchmarks}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))

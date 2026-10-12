@@ -195,11 +195,45 @@ async def test_roadmap_features():
         revoked_call = await client.get("/api/v1/zones", headers=api_headers)
         assert revoked_call.status_code == 401
 
-        # 14. HTML pages render cleanly
+        # 14. DDNS Token Creation & Update Endpoint
+        ddns_create = await client.post(
+            "/api/v1/ddns/tokens",
+            headers=headers,
+            json={"name": "HomeRouter", "zone_name": "mycorp.net", "record_name": "wan"},
+        )
+        assert ddns_create.status_code == 201
+        token_secret = ddns_create.json()["token"]
+        token_id = ddns_create.json()["id"]
+
+
+        # Call DDNS update
+        ddns_update = await client.get(f"/api/v1/ddns/update?token={token_secret}&myip=203.0.113.88")
+        assert ddns_update.status_code == 200
+        assert "good 203.0.113.88" in ddns_update.text
+
+        # 15. Backup Snapshot Creation, Listing, and Restoration
+        backup_create = await client.post("/api/v1/backups", headers=headers, json={"comment": "Test snapshot"})
+        assert backup_create.status_code == 200
+        backup_fn = backup_create.json()["filename"]
+
+        backup_list = await client.get("/api/v1/backups", headers=headers)
+        assert backup_list.status_code == 200
+        assert any(b["filename"] == backup_fn for b in backup_list.json()["backups"])
+
+        backup_restore = await client.post("/api/v1/backups/restore", headers=headers, json={"filename": backup_fn})
+        assert backup_restore.status_code == 200
+
+        # 16. DNSSEC endpoint inspection
+        dnssec_res = await client.get("/api/v1/zones/mycorp.net/dnssec", headers=headers)
+        assert dnssec_res.status_code == 200
+        assert "signed" in dnssec_res.json()
+
+        # 17. HTML pages render cleanly
         tools_html = await client.get("/tools", headers=headers)
         assert tools_html.status_code == 200
-        assert "DNS Diagnostics & Dig Tool" in tools_html.text
+        assert "DNS Diagnostics & Tools" in tools_html.text
 
         keys_html = await client.get("/api-keys", headers=headers)
         assert keys_html.status_code == 200
         assert "API Keys & Automation Tokens" in keys_html.text
+
