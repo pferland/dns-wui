@@ -16,6 +16,12 @@ function showToast(message, isError = false) {
   }, 3500);
 }
 
+// Initialize View Mode on Load (Defaults to Table)
+document.addEventListener("DOMContentLoaded", () => {
+  const savedMode = localStorage.getItem("dns_view_mode") || "table";
+  setViewMode(savedMode);
+});
+
 // View Mode Toggle (Cards vs Compact Table)
 function setViewMode(mode) {
   localStorage.setItem("dns_view_mode", mode);

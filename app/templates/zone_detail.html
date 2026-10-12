@@ -23,16 +23,16 @@
   </div>
 </div>
 
-<!-- SOA Overview -->
+<!-- SOA Telemetry Bar -->
 {% if zone.soa %}
-<div style="background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: var(--radius); padding: 1rem 1.25rem; margin-bottom: 1.5rem; display: flex; gap: 1.5rem; flex-wrap: wrap; font-size: 0.85rem;">
-  <div><span style="color: var(--text-dim);">SOA Serial:</span> <strong>{{ zone.soa.serial }}</strong></div>
-  <div><span style="color: var(--text-dim);">Primary NS:</span> <code style="color: var(--text-muted);">{{ zone.soa.mname }}</code></div>
-  <div><span style="color: var(--text-dim);">Admin Email:</span> <code style="color: var(--text-muted);">{{ zone.soa.rname }}</code></div>
-  <div><span style="color: var(--text-dim);">Refresh:</span> {{ zone.soa.refresh }}s</div>
-  <div><span style="color: var(--text-dim);">Retry:</span> {{ zone.soa.retry }}s</div>
-  <div><span style="color: var(--text-dim);">Expire:</span> {{ zone.soa.expire }}s</div>
-  <div><span style="color: var(--text-dim);">Negative TTL:</span> {{ zone.soa.minimum }}s</div>
+<div class="status-bar" style="margin-bottom: 1.25rem;">
+  <div class="status-item"><span class="status-label">SERIAL:</span> <span class="status-val">{{ zone.soa.serial }}</span></div>
+  <div class="status-item"><span class="status-label">MNAME:</span> <code class="status-code">{{ zone.soa.mname }}</code></div>
+  <div class="status-item"><span class="status-label">RNAME:</span> <code class="status-code">{{ zone.soa.rname }}</code></div>
+  <div class="status-item"><span class="status-label">REFRESH:</span> {{ zone.soa.refresh }}s</div>
+  <div class="status-item"><span class="status-label">RETRY:</span> {{ zone.soa.retry }}s</div>
+  <div class="status-item"><span class="status-label">EXPIRE:</span> {{ zone.soa.expire }}s</div>
+  <div class="status-item"><span class="status-label">MIN-TTL:</span> {{ zone.soa.minimum }}s</div>
 </div>
 {% endif %}
 

@@ -27,35 +27,23 @@
   </div>
 </div>
 
-<!-- Stats -->
-<div class="stats-grid">
-  <div class="stat-card">
-    <div class="stat-icon">&#127760;</div>
-    <div>
-      <div class="stat-value">{{ zones|length }}</div>
-      <div class="stat-label">Total Zones</div>
-    </div>
+<!-- Utilitarian Status Bar -->
+<div class="status-bar">
+  <div class="status-item">
+    <span class="status-label">ZONES:</span>
+    <span class="status-val">{{ zones|length }}</span>
   </div>
-  <div class="stat-card">
-    <div class="stat-icon">&#10145;</div>
-    <div>
-      <div class="stat-value">{{ forward_count }}</div>
-      <div class="stat-label">Forward Zones</div>
-    </div>
+  <div class="status-item">
+    <span class="status-label">FORWARD:</span>
+    <span class="status-val">{{ forward_count }}</span>
   </div>
-  <div class="stat-card">
-    <div class="stat-icon">&#11013;</div>
-    <div>
-      <div class="stat-value">{{ reverse_count }}</div>
-      <div class="stat-label">Reverse Zones (PTR)</div>
-    </div>
+  <div class="status-item">
+    <span class="status-label">REVERSE:</span>
+    <span class="status-val">{{ reverse_count }}</span>
   </div>
-  <div class="stat-card">
-    <div class="stat-icon">&#9881;</div>
-    <div>
-      <div class="stat-value" style="font-size: 1.1rem; font-family: monospace; overflow: hidden; text-overflow: ellipsis;">{{ zones_dir }}</div>
-      <div class="stat-label">Zones Directory</div>
-    </div>
+  <div class="status-item" style="margin-left: auto;">
+    <span class="status-label">ROOT:</span>
+    <code class="status-code">{{ zones_dir }}</code>
   </div>
 </div>
 
