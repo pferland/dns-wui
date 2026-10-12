@@ -25,14 +25,79 @@ def is_reverse_zone(name: str) -> bool:
     return clean.endswith(".in-addr.arpa") or clean.endswith(".ip6.arpa") or clean.endswith(".in-addr.arpa.") or clean.endswith(".ip6.arpa.")
 
 
-def parse_named_conf(conf_path: Path) -> list[DiscoveredZone]:
-    """Parse named.conf or named.conf.local to find configured zones and files."""
+INCLUDE_PATTERN = re.compile(r'include\s+"([^"]+)";', re.IGNORECASE)
+DIRECTORY_PATTERN = re.compile(r'directory\s+"([^"]+)";', re.IGNORECASE)
+
+
+def strip_bind_comments(text: str) -> str:
+    """Remove //, #, and /* */ comments from BIND 9 config."""
+    # Remove block comments /* ... */
+    text = re.sub(r'/\*.*?\*/', '', text, flags=re.DOTALL)
+    # Remove line comments // and #
+    lines = []
+    for line in text.splitlines():
+        # Strip trailing // or # comments
+        clean = re.sub(r'(?://|#).*$', '', line)
+        lines.append(clean)
+    return "\n".join(lines)
+
+
+def find_named_options_dir(
+    conf_path: Path,
+    visited: set[Path] | None = None,
+) -> Path | None:
+    """Find directory directive in named.conf or included files."""
+    if not conf_path.exists() or not conf_path.is_file():
+        return None
+
+    visited = visited or set()
+    real_conf = conf_path.resolve()
+    if real_conf in visited:
+        return None
+    visited.add(real_conf)
+
+    raw_content = conf_path.read_text(encoding="utf-8")
+    content = strip_bind_comments(raw_content)
+
+    dir_match = DIRECTORY_PATTERN.search(content)
+    if dir_match:
+        return Path(dir_match.group(1).strip())
+
+    for inc_match in INCLUDE_PATTERN.finditer(content):
+        inc_raw = inc_match.group(1).strip()
+        inc_p = Path(inc_raw)
+        if not inc_p.is_absolute():
+            inc_p = conf_path.parent / inc_p
+        found = find_named_options_dir(inc_p, visited=visited)
+        if found:
+            return found
+    return None
+
+
+def parse_named_conf(
+    conf_path: Path,
+    options_dir: Path | None = None,
+    visited: set[Path] | None = None,
+) -> list[DiscoveredZone]:
+    """Parse named.conf, follow includes, and find configured zones and files."""
     if not conf_path.exists() or not conf_path.is_file():
         return []
 
-    content = conf_path.read_text(encoding="utf-8")
+    if options_dir is None:
+        options_dir = find_named_options_dir(conf_path)
+
+    visited = visited or set()
+    real_conf = conf_path.resolve()
+    if real_conf in visited:
+        return []
+    visited.add(real_conf)
+
+    raw_content = conf_path.read_text(encoding="utf-8")
+    content = strip_bind_comments(raw_content)
+
     zones: list[DiscoveredZone] = []
 
+    # 1. Parse zones in this file
     for match in ZONE_BLOCK_PATTERN.finditer(content):
         zone_name = match.group(1).strip()
         body = match.group(2)
@@ -49,11 +114,15 @@ def parse_named_conf(conf_path: Path) -> list[DiscoveredZone]:
         # Resolve path
         p = Path(raw_path)
         if not p.is_absolute():
-            # Try relative to conf_path parent, or zones_dir
-            if (conf_path.parent / p).exists():
+            # Try options_dir if known (e.g. /var/cache/bind)
+            if options_dir and (options_dir / p).exists():
+                file_path = options_dir / p
+            elif (conf_path.parent / p).exists():
                 file_path = conf_path.parent / p
             elif (settings.ZONES_DIR / p).exists():
                 file_path = settings.ZONES_DIR / p
+            elif options_dir:
+                file_path = options_dir / p
             else:
                 file_path = settings.ZONES_DIR / p
         else:
@@ -66,6 +135,17 @@ def parse_named_conf(conf_path: Path) -> list[DiscoveredZone]:
             is_reverse=is_reverse_zone(zone_name),
             source="named.conf",
         ))
+
+    # 2. Recursively follow included configuration files
+    for inc_match in INCLUDE_PATTERN.finditer(content):
+        inc_raw = inc_match.group(1).strip()
+        inc_p = Path(inc_raw)
+        if not inc_p.is_absolute():
+            inc_p = conf_path.parent / inc_p
+
+        if inc_p.exists():
+            inc_zones = parse_named_conf(inc_p, options_dir=options_dir, visited=visited)
+            zones.extend(inc_zones)
 
     return zones
 
@@ -100,7 +180,20 @@ def scan_zones_directory(zones_dir: Path) -> list[DiscoveredZone]:
     return discovered
 
 
-def get_all_zones() -> list[DiscoveredZone]:
+def is_zone_ignored(zone_name: str) -> bool:
+    """Check if zone should be ignored/hidden from WUI."""
+    clean = zone_name.strip().rstrip(".").lower()
+    for ign in settings.IGNORED_ZONES:
+        ign_clean = ign.strip().rstrip(".").lower()
+        if clean == ign_clean:
+            return True
+        # Also support prefix/wildcard match if someone specifies e.g. "rpz.*"
+        if ign_clean.endswith("*") and clean.startswith(ign_clean[:-1]):
+            return True
+    return False
+
+
+def get_all_zones(include_ignored: bool = False) -> list[DiscoveredZone]:
     """Combine zones from named.conf and zones directory (hybrid discovery)."""
     conf_zones = parse_named_conf(settings.NAMED_CONF)
     dir_zones = scan_zones_directory(settings.ZONES_DIR)
@@ -112,6 +205,9 @@ def get_all_zones() -> list[DiscoveredZone]:
         clean_name = dz.name.rstrip(".")
         if clean_name not in known_names:
             merged.append(dz)
+
+    if not include_ignored:
+        merged = [z for z in merged if not is_zone_ignored(z.name)]
 
     return sorted(merged, key=lambda z: (z.is_reverse, z.name))
 

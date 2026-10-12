@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -34,9 +35,59 @@ class RawZoneUpdateRequest(BaseModel):
     bump_serial: bool = True
 
 
+def _quick_inspect_zone(file_path: Path, max_bytes: int = 500_000) -> tuple[int, int | None]:
+    """Quickly extract record count and SOA serial without full AST parsing on huge files."""
+    try:
+        size = file_path.stat().st_size
+    except Exception:
+        return 0, None
+
+    # If small file (< 500KB), standard parse is fast and accurate
+    if size <= max_bytes:
+        try:
+            model = parse_zone_file(file_path)
+            return len(model.records), (model.soa.serial if model.soa else None)
+        except Exception:
+            pass
+
+    # For large files (e.g. multi-megabyte RPZ adblock lists), scan lines/SOA quickly
+    serial = None
+    records_count = 0
+    try:
+        with file_path.open("r", encoding="utf-8", errors="ignore") as f:
+            in_soa = False
+            for line in f:
+                s = line.strip()
+                if not s or s.startswith(";") or s.startswith("$"):
+                    continue
+
+                records_count += 1
+                if "SOA" in line.upper():
+                    in_soa = True
+                    # Check if single line SOA
+                    parts = line.split()
+                    for idx, p in enumerate(parts):
+                        if p.upper() == "SOA" and len(parts) > idx + 3:
+                            if parts[idx + 3].isdigit():
+                                serial = int(parts[idx + 3])
+                                in_soa = False
+                    continue
+
+                if in_soa:
+                    # Find first number in SOA block (the serial)
+                    m = re.search(r"(\d+)", s)
+                    if m:
+                        serial = int(m.group(1))
+                    in_soa = False
+    except Exception:
+        pass
+
+    return records_count, serial
+
+
 @router.get("")
-async def list_zones(_user: User = Depends(get_current_user)):
-    zones = get_all_zones()
+async def list_zones(include_ignored: bool = False, _user: User = Depends(get_current_user)):
+    zones = get_all_zones(include_ignored=include_ignored)
     out = []
     for z in zones:
         record_count = 0
@@ -44,12 +95,7 @@ async def list_zones(_user: User = Depends(get_current_user)):
         exists_on_disk = z.file_path.exists()
 
         if exists_on_disk:
-            try:
-                model = parse_zone_file(z.file_path, origin=z.name)
-                record_count = len(model.records)
-                serial = model.soa.serial if model.soa else None
-            except Exception:
-                pass
+            record_count, serial = _quick_inspect_zone(z.file_path)
 
         out.append({
             "name": z.name,

@@ -11,6 +11,13 @@
     </p>
   </div>
   <div style="display: flex; gap: 0.6rem; align-items: center;">
+    <!-- Ignored Zones Toggle -->
+    {% if include_ignored %}
+      <a href="/" class="btn btn-secondary btn-sm" title="Hide system default / adblock zones" style="text-decoration: none;">&#128065; Active Zones Only</a>
+    {% else %}
+      <a href="/?include_ignored=true" class="btn btn-secondary btn-sm" title="Show all system and adblock zones" style="text-decoration: none;">&#128065; Show All (Including Ignored)</a>
+    {% endif %}
+
     <!-- View Switcher -->
     <div style="display: flex; background: var(--bg-card); border-radius: 6px; padding: 2px; border: 1px solid var(--border-color);">
       <button id="btnViewCards" class="btn btn-primary btn-sm" onclick="setViewMode('cards')">&#9638; Cards</button>

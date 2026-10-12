@@ -56,6 +56,37 @@ class Settings(BaseSettings):
     # SOA & PTR Configuration
     DEFAULT_SOA_STRATEGY: Literal["date_revision", "increment"] = "date_revision"
     AUTO_PTR_SYNC: bool = True
+    IGNORED_ZONES: list[str] = [
+        "rpz.adblock.spam.local",
+        "0.in-addr.arpa",
+        "127.in-addr.arpa",
+        "255.in-addr.arpa",
+        "10.in-addr.arpa",
+        "16.172.in-addr.arpa",
+        "168.192.in-addr.arpa",
+        "17.172.in-addr.arpa",
+        "18.172.in-addr.arpa",
+        "19.172.in-addr.arpa",
+        "20.172.in-addr.arpa",
+        "21.172.in-addr.arpa",
+        "22.172.in-addr.arpa",
+        "23.172.in-addr.arpa",
+        "24.172.in-addr.arpa",
+        "25.172.in-addr.arpa",
+        "26.172.in-addr.arpa",
+        "27.172.in-addr.arpa",
+        "28.172.in-addr.arpa",
+        "29.172.in-addr.arpa",
+        "30.172.in-addr.arpa",
+        "31.172.in-addr.arpa",
+        "localhost",
+        "local",
+        "empty",
+        "0",
+        "127",
+        "255",
+        ".",
+    ]
 
     # Security & Auth
     AUTH_MODE: Literal["local", "hybrid", "none"] = "hybrid"

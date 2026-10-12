@@ -63,16 +63,20 @@ app.include_router(api_router)
 # --- HTML Web UI Routes ---
 
 
+from app.api.zones import _quick_inspect_zone
+
+
 @app.get("/", response_class=HTMLResponse)
 async def index_page(
     request: Request,
+    include_ignored: bool = False,
     session: AsyncSession = Depends(get_session),
     user: User | None = Depends(get_current_user_optional),
 ):
     if not user and settings.AUTH_MODE not in ("none",):
         return RedirectResponse(url="/login")
 
-    zones = get_all_zones()
+    zones = get_all_zones(include_ignored=include_ignored)
     zone_list = []
     forward_count = 0
     reverse_count = 0
@@ -86,12 +90,7 @@ async def index_page(
         record_count = 0
         serial = None
         if z.file_path.exists():
-            try:
-                model = parse_zone_file(z.file_path, origin=z.name)
-                record_count = len(model.records)
-                serial = model.soa.serial if model.soa else None
-            except Exception:
-                pass
+            record_count, serial = _quick_inspect_zone(z.file_path)
 
         zone_list.append({
             "name": z.name,
@@ -114,6 +113,7 @@ async def index_page(
             "forward_count": forward_count,
             "reverse_count": reverse_count,
             "zones_dir": str(settings.ZONES_DIR),
+            "include_ignored": include_ignored,
         },
     )
 
