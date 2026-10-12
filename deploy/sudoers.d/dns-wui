@@ -1,0 +1,4 @@
+# Least-privilege permissions for dns-wui daemon user
+# Allows executing rndc and checkzone/checkconf without password
+bind ALL=(ALL) NOPASSWD: /usr/sbin/rndc reload *, /usr/sbin/named-checkconf *, /usr/sbin/named-checkzone *
+named ALL=(ALL) NOPASSWD: /usr/sbin/rndc reload *, /usr/sbin/named-checkconf *, /usr/sbin/named-checkzone *

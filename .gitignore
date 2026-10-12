@@ -1,0 +1,16 @@
+# Python & Virtualenv
+__pycache__/
+*.py[oc]
+.venv/
+build/
+dist/
+*.egg-info/
+
+# Data & SQLite
+data/
+*.db
+*.sqlite
+
+# Testing & caches
+.pytest_cache/
+.coverage

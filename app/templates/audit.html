@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block title %}Audit Logs - BIND 9 Manager{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">DNS Audit Logs</h1>
+    <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.25rem;">
+      Historical record of all DNS additions, updates, deletions, and daemon reloads.
+    </p>
+  </div>
+</div>
+
+<div class="data-table-container">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Timestamp (UTC)</th>
+        <th>User</th>
+        <th>Action</th>
+        <th>Zone</th>
+        <th>Record</th>
+        <th>Details</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for log in logs %}
+        <tr>
+          <td style="font-family: monospace; font-size: 0.8rem; color: var(--text-dim);">{{ log.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+          <td><strong>{{ log.username }}</strong></td>
+          <td><span class="badge" style="background: var(--bg-card); border: 1px solid var(--border-color);">{{ log.action }}</span></td>
+          <td><code style="color: #93c5fd;">{{ log.zone_name }}</code></td>
+          <td>
+            {% if log.record_type %}
+              <span class="badge badge-{{ log.record_type }}">{{ log.record_type }}</span> {{ log.record_name }}
+            {% else %}
+              -
+            {% endif %}
+          </td>
+          <td style="font-size: 0.85rem; color: var(--text-muted);">{{ log.details }}</td>
+          <td>
+            {% if log.status == 'SUCCESS' %}
+              <span style="color: var(--success); font-weight: 700;">&#10003; OK</span>
+            {% else %}
+              <span style="color: var(--danger); font-weight: 700;">&#10007; FAIL</span>
+            {% endif %}
+          </td>
+        </tr>
+      {% else %}
+        <tr>
+          <td colspan="7" style="text-align: center; padding: 2rem; color: var(--text-dim);">No audit logs recorded yet.</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

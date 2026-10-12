@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+
+{% block title %}Raw Editor: {{ zone_name }} - BIND 9 Manager{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <a href="/zones/{{ zone_name }}" style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 0.4rem; display: inline-block;">&larr; Back to Zone Records</a>
+    <h1 class="page-title">Raw Zone File: {{ zone_name }}</h1>
+    <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.25rem;">
+      Edits will be verified with <code>named-checkzone</code> before applying to disk.
+    </p>
+  </div>
+  <div style="display: flex; gap: 0.6rem; align-items: center;">
+    <label class="form-check" style="margin-right: 0.5rem;">
+      <input type="checkbox" id="bumpSerialCheck" checked>
+      <span>Auto-bump SOA serial</span>
+    </label>
+    <button class="btn btn-primary" id="btnSaveRaw" onclick="handleSaveRaw()">Save & Validate</button>
+  </div>
+</div>
+
+<div style="background: #0d1117; border: 1px solid var(--border-color); border-radius: var(--radius); padding: 1rem;">
+  <textarea id="rawContent" rows="24" class="form-control" style="font-family: 'Fira Code', 'Cascadia Code', Consolas, monospace; font-size: 0.9rem; line-height: 1.5; white-space: pre; tab-size: 8; background: #070a13; color: #e2e8f0; border: none; resize: vertical;" spellcheck="false">{{ content }}</textarea>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const currentZone = "{{ zone_name }}";
+
+async function handleSaveRaw() {
+  const btn = document.getElementById("btnSaveRaw");
+  btn.disabled = true;
+  btn.innerText = "Validating & Saving...";
+
+  const content = document.getElementById("rawContent").value;
+  const bumpSerial = document.getElementById("bumpSerialCheck").checked;
+
+  try {
+    const res = await fetch(`/api/v1/zones/${encodeURIComponent(currentZone)}/raw`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content: content, bump_serial: bumpSerial }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      showToast(data.message || "Zone saved and reloaded!");
+      setTimeout(() => window.location.href = `/zones/${encodeURIComponent(currentZone)}`, 1200);
+    } else {
+      showToast(`Validation Error: ${data.detail}`, true);
+      btn.disabled = false;
+      btn.innerText = "Save & Validate";
+    }
+  } catch (err) {
+    showToast(`Error: ${err}`, true);
+    btn.disabled = false;
+    btn.innerText = "Save & Validate";
+  }
+}
+</script>
+{% endblock %}

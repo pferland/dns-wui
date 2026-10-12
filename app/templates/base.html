@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}BIND 9 DNS Manager{% endblock %}</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <header>
+    <nav class="navbar">
+      <a href="/" class="nav-brand">
+        <span class="brand-badge">BIND 9</span>
+        <span>DNS-WUI</span>
+      </a>
+      <ul class="nav-links">
+        <li><a href="/" class="{% if active_page == 'zones' %}active{% endif %}">DNS Zones</a></li>
+        <li><a href="/audit" class="{% if active_page == 'audit' %}active{% endif %}">Audit Logs</a></li>
+        <li><a href="/system" class="{% if active_page == 'system' %}active{% endif %}">System & Diagnostics</a></li>
+      </ul>
+      <div class="nav-actions">
+        {% if user %}
+          <a href="/2fa" class="btn btn-secondary btn-sm" title="2FA Security">
+            {% if user.totp_enabled %}&#128274; 2FA Active{% else %}&#9888; Setup 2FA{% endif %}
+          </a>
+          <a href="/logout" class="btn btn-secondary btn-sm">Logout ({{ user.username }})</a>
+        {% else %}
+          <a href="/login" class="btn btn-primary btn-sm">Login</a>
+        {% endif %}
+      </div>
+    </nav>
+  </header>
+
+  <main class="container">
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer>
+    <p>BIND 9 DNS-WUI &bull; Safe Atomic Updates &bull; RFC 1035 / 2136 &bull; Reverse PTR Sync &bull; 2FA Protected</p>
+  </footer>
+
+  <script src="/static/js/app.js"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

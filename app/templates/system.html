@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+
+{% block title %}System & Diagnostics - BIND 9 Manager{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">System & BIND 9 Diagnostics</h1>
+    <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.25rem;">
+      Environment details and binary path validation on <code>{{ status.named_conf_path }}</code>.
+    </p>
+  </div>
+  <div>
+    <button class="btn btn-primary" onclick="runCheckconf(this)">&#9881; Test named.conf Syntax</button>
+  </div>
+</div>
+
+<div style="background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: var(--radius); padding: 1.5rem; margin-bottom: 1.5rem;">
+  <h2 style="font-size: 1.15rem; margin-bottom: 1rem;">BIND 9 System Status</h2>
+  
+  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; font-size: 0.9rem;">
+    <div>
+      <span style="color: var(--text-dim);">Configuration File:</span><br>
+      <code>{{ status.named_conf_path }}</code> 
+      {% if status.named_conf_exists %}<span style="color: var(--success);">&#10003; Exists</span>{% else %}<span style="color: var(--warning);">&#9888; Missing</span>{% endif %}
+    </div>
+
+    <div>
+      <span style="color: var(--text-dim);">Zones Directory:</span><br>
+      <code>{{ status.zones_dir }}</code>
+      {% if status.zones_dir_exists %}<span style="color: var(--success);">&#10003; Exists</span>{% else %}<span style="color: var(--warning);">&#9888; Missing</span>{% endif %}
+    </div>
+
+    <div>
+      <span style="color: var(--text-dim);">named-checkzone binary:</span><br>
+      {% if status.checkzone_bin %}<code style="color: #60a5fa;">{{ status.checkzone_bin }}</code>{% else %}<span style="color: var(--warning);">Not found (using pure dnspython)</span>{% endif %}
+    </div>
+
+    <div>
+      <span style="color: var(--text-dim);">named-checkconf binary:</span><br>
+      {% if status.checkconf_bin %}<code style="color: #60a5fa;">{{ status.checkconf_bin }}</code>{% else %}<span style="color: var(--warning);">Not found</span>{% endif %}
+    </div>
+
+    <div>
+      <span style="color: var(--text-dim);">rndc binary:</span><br>
+      {% if status.rndc_bin %}<code style="color: #60a5fa;">{{ status.rndc_bin }}</code>{% else %}<span style="color: var(--warning);">Not found (local mode)</span>{% endif %}
+    </div>
+
+    <div>
+      <span style="color: var(--text-dim);">Automatic Reverse PTR Sync:</span><br>
+      <strong>{% if status.auto_ptr_sync %}Enabled{% else %}Disabled{% endif %}</strong>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function runCheckconf(btn) {
+  const orig = btn.innerText;
+  btn.disabled = true;
+  btn.innerText = "Checking...";
+  try {
+    const res = await fetch("/api/v1/system/checkconf", { method: "POST" });
+    const data = await res.json();
+    if (res.ok) {
+      showToast(data.message);
+    } else {
+      showToast(`Syntax Error: ${data.detail || data.message}`, true);
+    }
+  } catch (err) {
+    showToast(`Error: ${err}`, true);
+  } finally {
+    btn.disabled = false;
+    btn.innerText = orig;
+  }
+}
+</script>
+{% endblock %}

@@ -1,0 +1,253 @@
+{% extends "base.html" %}
+
+{% block title %}{{ zone.origin }} - Zone Records - BIND 9 Manager{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <a href="/" style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 0.4rem; display: inline-block;">&larr; Back to Zones</a>
+    <div style="display: flex; align-items: center; gap: 0.75rem;">
+      <h1 class="page-title">{{ zone.origin }}</h1>
+      {% if zone.is_reverse %}
+        <span class="badge badge-reverse">REVERSE ZONE</span>
+      {% else %}
+        <span class="badge badge-forward">FORWARD ZONE</span>
+      {% endif %}
+    </div>
+    <p style="color: var(--text-dim); font-size: 0.8rem; font-family: monospace; margin-top: 0.25rem;">{{ zone.file_path }}</p>
+  </div>
+  <div style="display: flex; gap: 0.6rem;">
+    <a href="/zones/{{ zone.name }}/raw" class="btn btn-secondary">&#9998; Raw Zone Editor</a>
+    <button class="btn btn-secondary" onclick="reloadZone('{{ zone.name }}', this)">&#8635; RNDC Reload</button>
+    <button class="btn btn-primary" onclick="openAddRecordModal()">+ Add Record</button>
+  </div>
+</div>
+
+<!-- SOA Overview -->
+{% if zone.soa %}
+<div style="background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: var(--radius); padding: 1rem 1.25rem; margin-bottom: 1.5rem; display: flex; gap: 1.5rem; flex-wrap: wrap; font-size: 0.85rem;">
+  <div><span style="color: var(--text-dim);">SOA Serial:</span> <strong>{{ zone.soa.serial }}</strong></div>
+  <div><span style="color: var(--text-dim);">Primary NS:</span> <code style="color: var(--text-muted);">{{ zone.soa.mname }}</code></div>
+  <div><span style="color: var(--text-dim);">Admin Email:</span> <code style="color: var(--text-muted);">{{ zone.soa.rname }}</code></div>
+  <div><span style="color: var(--text-dim);">Refresh:</span> {{ zone.soa.refresh }}s</div>
+  <div><span style="color: var(--text-dim);">Retry:</span> {{ zone.soa.retry }}s</div>
+  <div><span style="color: var(--text-dim);">Expire:</span> {{ zone.soa.expire }}s</div>
+  <div><span style="color: var(--text-dim);">Negative TTL:</span> {{ zone.soa.minimum }}s</div>
+</div>
+{% endif %}
+
+<!-- Record Search Filter -->
+<div style="margin-bottom: 1rem; display: flex; justify-content: space-between; align-items: center;">
+  <input type="text" placeholder="Search records by name, type, or IP/target..." class="form-control" style="max-width: 400px;" oninput="filterRecords(this.value)">
+  <div style="color: var(--text-dim); font-size: 0.85rem;">Total: {{ zone.records|length }} Resource Records</div>
+</div>
+
+<!-- Records Table -->
+<div class="data-table-container">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th style="width: 25%;">Record Name</th>
+        <th style="width: 10%;">Type</th>
+        <th style="width: 10%;">TTL</th>
+        <th style="width: 40%;">RDATA (Target / Value)</th>
+        <th style="width: 15%; text-align: right;">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in zone.records %}
+        <tr class="record-row">
+          <td><strong style="font-family: monospace;">{{ r.name }}</strong></td>
+          <td><span class="badge badge-{{ r.rtype }}">{{ r.rtype }}</span></td>
+          <td style="color: var(--text-dim); font-family: monospace;">{{ r.ttl }}</td>
+          <td><code style="font-family: monospace; color: #a5b4fc; word-break: break-all;">{{ r.rdata }}</code></td>
+          <td style="text-align: right;">
+            <button class="btn btn-secondary btn-sm" onclick="openEditRecordModal('{{ r.name }}', '{{ r.rtype }}', {{ r.ttl }}, '{{ r.rdata }}')">&#9998; Edit</button>
+            <button class="btn btn-danger btn-sm" onclick="handleDeleteRecord('{{ r.name }}', '{{ r.rtype }}', '{{ r.rdata }}')">&times;</button>
+          </td>
+        </tr>
+      {% else %}
+        <tr>
+          <td colspan="5" style="text-align: center; padding: 2rem; color: var(--text-dim);">No resource records in this zone.</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<!-- Add Record Modal -->
+<div id="recordModal" class="modal-backdrop">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3 class="modal-title" id="modalTitle">Add DNS Record</h3>
+      <button class="btn btn-secondary btn-sm" onclick="closeModal('recordModal')">&times;</button>
+    </div>
+    <form id="recordForm" onsubmit="handleRecordSubmit(event)">
+      <input type="hidden" id="editMode" value="create">
+      <input type="hidden" id="origName" value="">
+      <input type="hidden" id="origRtype" value="">
+      <input type="hidden" id="origRdata" value="">
+
+      <div class="form-group">
+        <label for="recName">Record Name</label>
+        <input type="text" id="recName" required placeholder="e.g. www, router, or @ for zone origin" class="form-control">
+      </div>
+
+      <div class="form-group" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+        <div>
+          <label for="recType">Record Type</label>
+          <select id="recType" required class="form-control" onchange="onRecordTypeChange('recType', 'ptrSyncContainer')">
+            <option value="A">A (IPv4 Address)</option>
+            <option value="AAAA">AAAA (IPv6 Address)</option>
+            <option value="CNAME">CNAME (Alias)</option>
+            <option value="PTR">PTR (Reverse Lookup)</option>
+            <option value="MX">MX (Mail Exchange)</option>
+            <option value="TXT">TXT (Text / SPF)</option>
+            <option value="SRV">SRV (Service)</option>
+            <option value="NS">NS (Nameserver)</option>
+            <option value="CAA">CAA (Certificate Auth)</option>
+          </select>
+        </div>
+        <div>
+          <label for="recTtl">TTL (Seconds)</label>
+          <input type="number" id="recTtl" required value="3600" class="form-control">
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="recData">RDATA (Target / IP / Value)</label>
+        <input type="text" id="recData" required placeholder="e.g. 192.168.1.100 or 10 mail.home.lab." class="form-control">
+      </div>
+
+      <!-- PTR Auto Sync Option -->
+      <div class="form-group" id="ptrSyncContainer" style="display: flex;">
+        <label class="form-check">
+          <input type="checkbox" id="recSyncPtr" checked>
+          <span>Automatically create/update reverse <strong>PTR</strong> record in matching zone</span>
+        </label>
+      </div>
+
+      <div style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1.5rem;">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('recordModal')">Cancel</button>
+        <button type="submit" class="btn btn-primary" id="btnSaveRecord">Save Record</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const currentZone = "{{ zone.name }}";
+
+function openAddRecordModal() {
+  document.getElementById("modalTitle").innerText = "Add DNS Record";
+  document.getElementById("editMode").value = "create";
+  document.getElementById("recName").value = "";
+  document.getElementById("recType").value = "A";
+  document.getElementById("recTtl").value = "3600";
+  document.getElementById("recData").value = "";
+  onRecordTypeChange('recType', 'ptrSyncContainer');
+  openModal("recordModal");
+}
+
+function openEditRecordModal(name, rtype, ttl, rdata) {
+  document.getElementById("modalTitle").innerText = "Edit DNS Record";
+  document.getElementById("editMode").value = "edit";
+  document.getElementById("origName").value = name;
+  document.getElementById("origRtype").value = rtype;
+  document.getElementById("origRdata").value = rdata;
+
+  document.getElementById("recName").value = name;
+  document.getElementById("recType").value = rtype;
+  document.getElementById("recTtl").value = ttl;
+  document.getElementById("recData").value = rdata;
+  onRecordTypeChange('recType', 'ptrSyncContainer');
+  openModal("recordModal");
+}
+
+async function handleRecordSubmit(e) {
+  e.preventDefault();
+  const btn = document.getElementById("btnSaveRecord");
+  btn.disabled = true;
+  btn.innerText = "Saving...";
+
+  const editMode = document.getElementById("editMode").value;
+  const syncPtr = document.getElementById("recSyncPtr").checked;
+
+  let url = `/api/v1/zones/${encodeURIComponent(currentZone)}/records`;
+  let method = "POST";
+  let payload = {};
+
+  if (editMode === "create") {
+    payload = {
+      name: document.getElementById("recName").value.trim(),
+      rtype: document.getElementById("recType").value.trim(),
+      ttl: parseInt(document.getElementById("recTtl").value, 10),
+      rdata: document.getElementById("recData").value.trim(),
+      sync_ptr: syncPtr,
+    };
+  } else {
+    method = "PUT";
+    payload = {
+      old_name: document.getElementById("origName").value.trim(),
+      old_rtype: document.getElementById("origRtype").value.trim(),
+      old_rdata: document.getElementById("origRdata").value.trim(),
+      new_name: document.getElementById("recName").value.trim(),
+      new_rtype: document.getElementById("recType").value.trim(),
+      new_ttl: parseInt(document.getElementById("recTtl").value, 10),
+      new_rdata: document.getElementById("recData").value.trim(),
+      sync_ptr: syncPtr,
+    };
+  }
+
+  try {
+    const res = await fetch(url, {
+      method: method,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      showToast(data.ptr_sync ? `Saved! (${data.ptr_sync})` : "Record saved successfully!");
+      setTimeout(() => window.location.reload(), 1000);
+    } else {
+      showToast(`Error: ${data.detail}`, true);
+      btn.disabled = false;
+      btn.innerText = "Save Record";
+    }
+  } catch (err) {
+    showToast(`Error: ${err}`, true);
+    btn.disabled = false;
+    btn.innerText = "Save Record";
+  }
+}
+
+async function handleDeleteRecord(name, rtype, rdata) {
+  const syncPtr = confirm(`Delete ${rtype} record "${name}" -> "${rdata}"?\n\nClick OK to proceed.`);
+  if (!syncPtr) return;
+
+  try {
+    const res = await fetch(`/api/v1/zones/${encodeURIComponent(currentZone)}/records`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: name,
+        rtype: rtype,
+        rdata: rdata,
+        sync_ptr: true,
+      }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      showToast(data.ptr_sync ? `Deleted! (${data.ptr_sync})` : "Record deleted successfully!");
+      setTimeout(() => window.location.reload(), 1000);
+    } else {
+      showToast(`Error: ${data.detail}`, true);
+    }
+  } catch (err) {
+    showToast(`Error: ${err}`, true);
+  }
+}
+</script>
+{% endblock %}

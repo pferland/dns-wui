@@ -1,0 +1,26 @@
+[Unit]
+Description=BIND 9 DNS Web User Interface (dns-wui)
+After=network.target named.service bind9.service
+Wants=named.service
+
+[Service]
+Type=simple
+User=bind
+Group=bind
+WorkingDirectory=/opt/dns-wui
+Environment=PYTHONUNBUFFERED=1
+Environment=DNS_WUI_SERVER_HOST=0.0.0.0
+Environment=DNS_WUI_SERVER_PORT=8080
+Environment=DNS_WUI_NAMED_CONF=/etc/bind/named.conf
+Environment=DNS_WUI_ZONES_DIR=/etc/bind/zones
+ExecStart=/opt/dns-wui/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8080
+Restart=always
+RestartSec=5s
+
+# Security hardening
+ProtectSystem=full
+ProtectHome=true
+NoNewPrivileges=false
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,209 @@
+{% extends "base.html" %}
+
+{% block title %}DNS Zones - BIND 9 DNS Manager{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">DNS Zones</h1>
+    <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 0.25rem;">
+      Managing local BIND 9 configuration on <code>{{ bind_host }}</code>
+    </p>
+  </div>
+  <div style="display: flex; gap: 0.6rem; align-items: center;">
+    <!-- View Switcher -->
+    <div style="display: flex; background: var(--bg-card); border-radius: 6px; padding: 2px; border: 1px solid var(--border-color);">
+      <button id="btnViewCards" class="btn btn-primary btn-sm" onclick="setViewMode('cards')">&#9638; Cards</button>
+      <button id="btnViewTable" class="btn btn-secondary btn-sm" onclick="setViewMode('table')">&#9776; Table</button>
+    </div>
+    <button class="btn btn-primary" onclick="openModal('createZoneModal')">+ Create Zone</button>
+  </div>
+</div>
+
+<!-- Stats -->
+<div class="stats-grid">
+  <div class="stat-card">
+    <div class="stat-icon">&#127760;</div>
+    <div>
+      <div class="stat-value">{{ zones|length }}</div>
+      <div class="stat-label">Total Zones</div>
+    </div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon">&#10145;</div>
+    <div>
+      <div class="stat-value">{{ forward_count }}</div>
+      <div class="stat-label">Forward Zones</div>
+    </div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon">&#11013;</div>
+    <div>
+      <div class="stat-value">{{ reverse_count }}</div>
+      <div class="stat-label">Reverse Zones (PTR)</div>
+    </div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon">&#9881;</div>
+    <div>
+      <div class="stat-value" style="font-size: 1.1rem; font-family: monospace; overflow: hidden; text-overflow: ellipsis;">{{ zones_dir }}</div>
+      <div class="stat-label">Zones Directory</div>
+    </div>
+  </div>
+</div>
+
+<!-- 1. Cards View -->
+<div id="viewCards" class="zones-grid">
+  {% for z in zones %}
+    <div class="zone-card">
+      <div class="zone-card-header">
+        <div class="zone-name">{{ z.name }}</div>
+        {% if z.is_reverse %}
+          <span class="badge badge-reverse">REVERSE</span>
+        {% else %}
+          <span class="badge badge-forward">FORWARD</span>
+        {% endif %}
+      </div>
+      <div class="zone-meta">{{ z.file_path }}</div>
+      <div class="zone-stats">
+        <span><strong>{{ z.record_count }}</strong> Records</span>
+        {% if z.serial %}
+          <span>Serial: <strong>{{ z.serial }}</strong></span>
+        {% endif %}
+      </div>
+      <div class="zone-actions">
+        <a href="/zones/{{ z.name }}" class="btn btn-primary btn-sm">&#9881; Manage Records</a>
+        <a href="/zones/{{ z.name }}/raw" class="btn btn-secondary btn-sm">&#9998; Raw File</a>
+        <button class="btn btn-secondary btn-sm" onclick="reloadZone('{{ z.name }}', this)">&#8635; Reload</button>
+      </div>
+    </div>
+  {% else %}
+    <div style="grid-column: 1 / -1; text-align: center; padding: 4rem 1rem; color: var(--text-muted);">
+      <h3>No Zones Discovered</h3>
+      <p style="margin-top: 0.5rem;">Click "+ Create Zone" to initialize your first forward or reverse zone.</p>
+    </div>
+  {% endfor %}
+</div>
+
+<!-- 2. Compact Sysadmin Table View -->
+<div id="viewTable" class="data-table-container" style="display: none;">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Zone Origin</th>
+        <th>Type</th>
+        <th>Records</th>
+        <th>SOA Serial</th>
+        <th>File Path</th>
+        <th>Source</th>
+        <th style="text-align: right;">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for z in zones %}
+        <tr>
+          <td><a href="/zones/{{ z.name }}" style="font-weight: 700; color: var(--accent);">{{ z.name }}</a></td>
+          <td>
+            {% if z.is_reverse %}
+              <span class="badge badge-reverse">REVERSE</span>
+            {% else %}
+              <span class="badge badge-forward">FORWARD</span>
+            {% endif %}
+          </td>
+          <td>{{ z.record_count }}</td>
+          <td><code style="font-family: monospace;">{{ z.serial or 'N/A' }}</code></td>
+          <td><span style="font-family: monospace; font-size: 0.8rem; color: var(--text-dim);">{{ z.file_path }}</span></td>
+          <td><span style="font-size: 0.8rem; color: var(--text-dim);">{{ z.source }}</span></td>
+          <td style="text-align: right;">
+            <a href="/zones/{{ z.name }}" class="btn btn-primary btn-sm">Manage</a>
+            <a href="/zones/{{ z.name }}/raw" class="btn btn-secondary btn-sm">Raw</a>
+            <button class="btn btn-secondary btn-sm" onclick="reloadZone('{{ z.name }}', this)">&#8635;</button>
+          </td>
+        </tr>
+      {% else %}
+        <tr>
+          <td colspan="7" style="text-align: center; padding: 2rem; color: var(--text-dim);">No zones discovered.</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<!-- Create Zone Modal -->
+<div id="createZoneModal" class="modal-backdrop">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3 class="modal-title">Create New DNS Zone</h3>
+      <button class="btn btn-secondary btn-sm" onclick="closeModal('createZoneModal')">&times;</button>
+    </div>
+    <form id="createZoneForm" onsubmit="handleCreateZone(event)">
+      <div class="form-group">
+        <label for="newOrigin">Zone Domain / Origin</label>
+        <input type="text" id="newOrigin" required placeholder="e.g. home.lab or 1.168.192.in-addr.arpa" class="form-control">
+      </div>
+      <div class="form-group">
+        <label for="newPrimaryNs">Primary Nameserver (MNAME)</label>
+        <input type="text" id="newPrimaryNs" required value="ns1.home.lab." class="form-control">
+      </div>
+      <div class="form-group">
+        <label for="newAdminEmail">Admin Contact Email (RNAME)</label>
+        <input type="text" id="newAdminEmail" required value="hostmaster.home.lab." class="form-control">
+      </div>
+      <div class="form-group">
+        <label for="newDefaultTtl">Default TTL (Seconds)</label>
+        <input type="number" id="newDefaultTtl" required value="3600" class="form-control">
+      </div>
+      <div class="form-group">
+        <label class="form-check">
+          <input type="checkbox" id="newAppendConf" checked>
+          <span>Append <code>zone "{...}"</code> block to named.conf.local</span>
+        </label>
+      </div>
+      <div style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1.5rem;">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('createZoneModal')">Cancel</button>
+        <button type="submit" class="btn btn-primary" id="btnSubmitZone">Create Zone</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function handleCreateZone(e) {
+  e.preventDefault();
+  const btn = document.getElementById("btnSubmitZone");
+  btn.disabled = true;
+  btn.innerText = "Creating...";
+
+  const payload = {
+    origin: document.getElementById("newOrigin").value.trim(),
+    primary_ns: document.getElementById("newPrimaryNs").value.trim(),
+    admin_email: document.getElementById("newAdminEmail").value.trim(),
+    default_ttl: parseInt(document.getElementById("newDefaultTtl").value, 10),
+    create_named_conf_entry: document.getElementById("newAppendConf").checked,
+  };
+
+  try {
+    const res = await fetch("/api/v1/zones", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      showToast("Zone created successfully!");
+      setTimeout(() => window.location.reload(), 1000);
+    } else {
+      showToast(`Error: ${data.detail}`, true);
+      btn.disabled = false;
+      btn.innerText = "Create Zone";
+    }
+  } catch (err) {
+    showToast(`Error: ${err}`, true);
+    btn.disabled = false;
+    btn.innerText = "Create Zone";
+  }
+}
+</script>
+{% endblock %}

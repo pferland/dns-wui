@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+
+{% block title %}Sign In - BIND 9 DNS Manager{% endblock %}
+
+{% block content %}
+<div style="max-width: 420px; margin: 4rem auto; background: var(--bg-secondary); padding: 2rem; border-radius: var(--radius); border: 1px solid var(--border-color); box-shadow: var(--shadow);">
+  <div style="text-align: center; margin-bottom: 1.5rem;">
+    <span class="brand-badge" style="font-size: 1rem; padding: 0.3rem 0.7rem;">BIND 9</span>
+    <h2 style="margin-top: 0.75rem; font-size: 1.4rem;">DNS Administration</h2>
+  </div>
+
+  {% if error %}
+    <div style="background: rgba(239, 68, 68, 0.2); border: 1px solid var(--danger); color: #fca5a5; padding: 0.75rem; border-radius: 6px; margin-bottom: 1rem; font-size: 0.85rem;">
+      {{ error }}
+    </div>
+  {% endif %}
+
+  {% if step == '2fa' %}
+    <!-- 2FA Verification Step -->
+    <form method="POST" action="/login/2fa">
+      <input type="hidden" name="temp_token" value="{{ temp_token }}">
+      <div class="form-group">
+        <label for="code">Two-Factor Authentication Code</label>
+        <p style="font-size: 0.8rem; color: var(--text-dim); margin-bottom: 0.5rem;">Enter the 6-digit code from your authenticator app</p>
+        <input type="text" id="code" name="code" pattern="[0-9]{6}" maxlength="6" autofocus required class="form-control" placeholder="123456" style="text-align: center; font-size: 1.4rem; letter-spacing: 4px;">
+      </div>
+      <button type="submit" class="btn btn-primary" style="width: 100%; justify-content: center; padding: 0.7rem; margin-top: 1rem;">Verify & Enter</button>
+    </form>
+  {% else %}
+    <!-- Standard Username & Password Step -->
+    <form method="POST" action="/login">
+      <div class="form-group">
+        <label for="username">Username</label>
+        <input type="text" id="username" name="username" required autofocus class="form-control">
+      </div>
+      <div class="form-group">
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" required class="form-control">
+      </div>
+      <button type="submit" class="btn btn-primary" style="width: 100%; justify-content: center; padding: 0.7rem; margin-top: 1rem;">Sign In</button>
+    </form>
+  {% endif %}
+</div>
+{% endblock %}
