@@ -31,10 +31,10 @@ A secure, modern, self-hosted web management interface for BIND 9 DNS servers. D
 cd dns-wui
 
 # Install dependencies and start server
-uv run uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
+uv run uvicorn app.main:app --host 0.0.0.0 --port 8008 --reload
 ```
 
-Open your browser at `http://localhost:8080`.
+Open your browser at `http://localhost:8008`.
 - **Default Username:** `admin`
 - **Default Password:** `admin123`
 
@@ -73,7 +73,7 @@ sudo chmod 0440 /etc/sudoers.d/dns-wui
 | Variable | Default | Description |
 |---|---|---|
 | `DNS_WUI_SERVER_HOST` | `0.0.0.0` | Listen host |
-| `DNS_WUI_SERVER_PORT` | `8080` | Listen port |
+| `DNS_WUI_SERVER_PORT` | `8008` | Listen port |
 | `DNS_WUI_NAMED_CONF` | `/etc/bind/named.conf` | Path to BIND named.conf or named.conf.local |
 | `DNS_WUI_ZONES_DIR` | `/etc/bind/zones` | Managed zone files directory |
 | `DNS_WUI_DEFAULT_SOA_STRATEGY`| `date_revision` | Serial bump strategy (`date_revision` or `increment`) |

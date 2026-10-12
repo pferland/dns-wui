@@ -40,8 +40,8 @@ class Settings(BaseSettings):
 
     APP_NAME: str = "BIND 9 DNS Manager"
     SERVER_HOST: str = "0.0.0.0"
-    SERVER_PORT: int = 8080
-    BASE_URL: str = "http://localhost:8080"
+    SERVER_PORT: int = 8008
+    BASE_URL: str = "http://localhost:8008"
     DATA_DIR: Path = Path("./data")
     DATABASE_URL: str = "sqlite+aiosqlite:///./data/dns_wui.db"
 
