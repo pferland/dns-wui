@@ -194,9 +194,9 @@ async def get_system_settings(
     session: AsyncSession = Depends(get_session),
     _user: User = Depends(require_role("admin")),
 ):
-    """Retrieve all configurable settings, categories, types, and current values."""
+    """Retrieve all configurable settings, categories, types, staged values, and live values."""
     from app.services.settings_service import get_all_settings_view
-    return {"settings": await get_all_settings_view(session)}
+    return await get_all_settings_view(session)
 
 
 class UpdateSettingsRequest(BaseModel):
@@ -209,16 +209,46 @@ async def update_system_settings(
     session: AsyncSession = Depends(get_session),
     user: User = Depends(require_role("admin")),
 ):
-    """Update runtime configuration settings and persist them to database."""
+    """Save configuration settings to database without applying immediately."""
     from app.services.settings_service import save_settings_to_db
-    updated = await save_settings_to_db(session, req.settings)
+    saved = await save_settings_to_db(session, req.settings)
 
     await log_audit(
         session=session,
         username=user.username,
-        action="UPDATE_SETTINGS",
+        action="SAVE_SETTINGS",
         zone_name=None,
-        details=f"Updated settings: {', '.join(updated.keys())}",
+        details=f"Saved staged settings ({len(saved)} parameters). Pending reload to become active.",
     )
-    return {"message": "Settings updated successfully", "updated": updated}
+    return {
+        "message": "Settings saved successfully. Click 'Reload Service & Apply Settings' to make them active.",
+        "saved": saved,
+    }
+
+
+@router.post("/settings/reload")
+async def reload_system_settings(
+    session: AsyncSession = Depends(get_session),
+    user: User = Depends(require_role("admin")),
+):
+    """Apply saved settings from database into active runtime and reconfigure BIND daemon if needed."""
+    from app.services.settings_service import apply_saved_settings
+    applied = await apply_saved_settings(session)
+
+    # Reconfig BIND daemon if rndc is available
+    rndc_ok, rndc_msg = await rndc_reconfig()
+
+    await log_audit(
+        session=session,
+        username=user.username,
+        action="RELOAD_SETTINGS",
+        zone_name=None,
+        details=f"Applied {len(applied)} saved settings to live runtime. RNDC: {rndc_msg}",
+    )
+    return {
+        "message": f"Applied {len(applied)} settings to live service successfully.",
+        "rndc_message": rndc_msg,
+        "applied": applied,
+    }
+
 

@@ -72,8 +72,8 @@ def parse_setting_value(val_str: str, val_type: str) -> Any:
 
 
 async def save_settings_to_db(session: AsyncSession, new_settings: dict[str, Any]) -> dict[str, Any]:
-    """Persist settings to DB and update runtime config."""
-    updated = {}
+    """Persist settings to DB as staged configuration without auto-applying to live runtime."""
+    saved = {}
     for key, raw_val in new_settings.items():
         if key not in CONFIGURABLE_FIELDS:
             continue
@@ -88,7 +88,7 @@ async def save_settings_to_db(session: AsyncSession, new_settings: dict[str, Any
         else:
             stored_str = str(parsed_val) if parsed_val is not None else ""
 
-        # Query or update row
+        # Query or update row in database
         result = await session.exec(select(AppSetting).where(AppSetting.key == key))
         existing = result.first()
         if existing:
@@ -98,31 +98,68 @@ async def save_settings_to_db(session: AsyncSession, new_settings: dict[str, Any
             new_row = AppSetting(key=key, value=stored_str)
             session.add(new_row)
 
-        settings.apply_override(key, parsed_val)
-        updated[key] = parsed_val
+        saved[key] = parsed_val
 
     await session.commit()
-    return updated
+    return saved
 
 
-async def get_all_settings_view(session: AsyncSession) -> list[dict[str, Any]]:
-    """Return all settings with metadata, current runtime value, and category."""
-    # Ensure runtime has latest from DB
-    await load_settings_from_db(session)
+async def apply_saved_settings(session: AsyncSession) -> dict[str, Any]:
+    """Load persistent settings from database and apply them into live runtime settings."""
+    result = await session.exec(select(AppSetting))
+    db_settings = result.all()
+    applied = {}
+    for row in db_settings:
+        if row.key in CONFIGURABLE_FIELDS:
+            meta = CONFIGURABLE_FIELDS[row.key]
+            val = parse_setting_value(row.value, meta["type"])
+            settings.apply_override(row.key, val)
+            applied[row.key] = val
+    return applied
 
-    res = []
+
+async def get_all_settings_view(session: AsyncSession) -> dict[str, Any]:
+    """Return all settings with metadata, staged DB value, live runtime value, and pending status."""
+    result = await session.exec(select(AppSetting))
+    db_map = {row.key: row.value for row in result.all()}
+
+    settings_list = []
+    has_pending = False
+
     for key, meta in CONFIGURABLE_FIELDS.items():
-        curr_val = getattr(settings, key, None)
-        # Convert Path to str for display
-        if hasattr(curr_val, "as_posix"):
-            curr_val = str(curr_val)
+        live_val = getattr(settings, key, None)
+        if hasattr(live_val, "as_posix"):
+            live_val = str(live_val)
 
-        res.append({
+        # Staged value in DB if any
+        if key in db_map:
+            staged_val = parse_setting_value(db_map[key], meta["type"])
+        else:
+            staged_val = live_val
+
+        # Compare if staged != live
+        is_pending = False
+        if key in db_map:
+            # normalize for comparison
+            staged_norm = str(staged_val) if meta["type"] != "list" else json.dumps(staged_val)
+            live_norm = str(live_val) if meta["type"] != "list" else json.dumps(live_val)
+            if staged_norm != live_norm:
+                is_pending = True
+                has_pending = True
+
+        settings_list.append({
             "key": key,
             "category": meta["category"],
             "type": meta["type"],
             "description": meta["description"],
             "choices": meta.get("choices"),
-            "value": curr_val,
+            "value": staged_val,
+            "live_value": live_val,
+            "is_pending": is_pending,
         })
-    return res
+
+    return {
+        "settings": settings_list,
+        "has_pending_changes": has_pending,
+    }
+

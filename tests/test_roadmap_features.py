@@ -243,20 +243,33 @@ async def test_roadmap_features():
         all_s = settings_get.json()["settings"]
         assert any(s["key"] == "APP_NAME" for s in all_s)
 
-        # Update setting via API
-        settings_update = await client.post(
+        # 19. Save setting via API (staged - not auto-applied immediately)
+        old_app_name = settings.APP_NAME
+        settings_save = await client.post(
             "/api/v1/system/settings",
             headers=headers,
-            json={"settings": {"APP_NAME": "Custom BIND Manager", "AUTO_PTR_SYNC": False}},
+            json={"settings": {"APP_NAME": "Staged BIND Manager", "AUTO_PTR_SYNC": False}},
         )
-        assert settings_update.status_code == 200
-        assert settings.APP_NAME == "Custom BIND Manager"
+        assert settings_save.status_code == 200
+        # Should NOT be auto-applied yet
+        assert settings.APP_NAME == old_app_name
+
+        # Verify staged pending status in settings view
+        pending_view = await client.get("/api/v1/system/settings", headers=headers)
+        assert pending_view.json()["has_pending_changes"] is True
+
+        # Now trigger reload service / apply settings
+        reload_res = await client.post("/api/v1/system/settings/reload", headers=headers)
+        assert reload_res.status_code == 200
+        # Now live settings are updated
+        assert settings.APP_NAME == "Staged BIND Manager"
         assert settings.AUTO_PTR_SYNC is False
 
         # Render settings page
         settings_html = await client.get("/settings", headers=headers)
         assert settings_html.status_code == 200
         assert "System & Server Settings" in settings_html.text
-        assert "Custom BIND Manager" in settings_html.text
+        assert "Staged BIND Manager" in settings_html.text
+
 
 

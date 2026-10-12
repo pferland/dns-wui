@@ -7,13 +7,31 @@
   <div>
     <h1 class="page-title">System & Server Settings</h1>
     <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.25rem;">
-      Configure all runtime parameters, BIND 9 system paths, binary tools, SOA automation strategies, security options, and SSO settings.
+      Configure application parameters, BIND 9 system paths, binary tools, SOA automation strategies, security options, and SSO settings.
     </p>
   </div>
-  <div>
-    <button type="button" class="btn btn-primary" onclick="submitSettingsForm()">&#128190; Save All Settings</button>
+  <div style="display: flex; gap: 0.5rem; align-items: center;">
+    <button type="button" class="btn btn-warning" id="btnReloadTop" onclick="handleReloadService()">&#8635; Reload Service & Apply Settings</button>
+    <button type="button" class="btn btn-primary" onclick="submitSettingsForm()">&#128190; Save Settings (Staged)</button>
   </div>
 </div>
+
+{% if has_pending_changes %}
+<div id="pendingAlert" style="background: rgba(245, 158, 11, 0.15); border: 1px solid rgba(245, 158, 11, 0.4); border-radius: var(--radius); padding: 1rem 1.25rem; margin-bottom: 1.5rem; display: flex; justify-content: space-between; align-items: center;">
+  <div style="display: flex; align-items: center; gap: 0.75rem;">
+    <span style="font-size: 1.5rem;">&#9888;</span>
+    <div>
+      <strong style="color: #fbbf24; font-size: 0.95rem;">Pending Settings Changes Staged in Database</strong>
+      <p style="color: #cbd5e1; font-size: 0.82rem; margin-top: 0.2rem;">
+        You have saved setting updates that are not yet active in the live runtime. Click <strong>Reload Service & Apply Settings</strong> to activate them now.
+      </p>
+    </div>
+  </div>
+  <div>
+    <button type="button" class="btn btn-warning btn-sm" onclick="handleReloadService()">&#8635; Reload Service Now</button>
+  </div>
+</div>
+{% endif %}
 
 <form id="settingsForm" onsubmit="handleSettingsSubmit(event)">
   {% for category, items in categories.items() %}
@@ -26,7 +44,12 @@
       {% for item in items %}
       <div class="form-group" style="margin-bottom: 0;">
         <label for="setting_{{ item.key }}" style="display: flex; justify-content: space-between; align-items: baseline; font-size: 0.85rem;">
-          <span><code>{{ item.key }}</code></span>
+          <span style="display: inline-flex; align-items: center; gap: 0.4rem;">
+            <code>{{ item.key }}</code>
+            {% if item.is_pending %}
+              <span class="badge" style="background: rgba(245, 158, 11, 0.2); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.4); font-size: 0.7rem; padding: 0.1rem 0.35rem;">Staged Pending</span>
+            {% endif %}
+          </span>
           <span style="font-size: 0.75rem; color: var(--text-dim);">{{ item.type }}</span>
         </label>
         
@@ -56,6 +79,12 @@
         {% else %}
           <input type="text" id="setting_{{ item.key }}" name="{{ item.key }}" value="{{ item.value or '' }}" class="form-control font-mono" style="font-size: 0.85rem;">
         {% endif %}
+
+        {% if item.is_pending %}
+          <div style="font-size: 0.74rem; color: var(--text-dim); margin-top: 0.3rem;">
+            Live active value: <code style="color: #94a3b8;">{{ item.live_value }}</code>
+          </div>
+        {% endif %}
       </div>
       {% endfor %}
     </div>
@@ -64,7 +93,8 @@
 
   <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-bottom: 3rem;">
     <button type="button" class="btn btn-secondary" onclick="window.location.reload()">Discard Changes</button>
-    <button type="submit" class="btn btn-primary" id="btnSaveBottom">&#128190; Save All Settings</button>
+    <button type="button" class="btn btn-warning" onclick="handleReloadService()">&#8635; Reload Service & Apply</button>
+    <button type="submit" class="btn btn-primary" id="btnSaveBottom">&#128190; Save Settings (Staged)</button>
   </div>
 </form>
 {% endblock %}
@@ -80,7 +110,7 @@ async function handleSettingsSubmit(e) {
   const form = document.getElementById("settingsForm");
   const saveBtn = document.getElementById("btnSaveBottom");
   saveBtn.disabled = true;
-  saveBtn.innerText = "Saving Settings...";
+  saveBtn.innerText = "Saving Staged Settings...";
 
   const payload = {};
   const inputs = form.querySelectorAll("input, select, textarea");
@@ -107,17 +137,43 @@ async function handleSettingsSubmit(e) {
 
     const data = await res.json();
     if (res.ok) {
-      showToast(data.message || "Settings updated successfully!");
+      showToast(data.message || "Settings saved to database (pending reload)!");
       setTimeout(() => window.location.reload(), 1200);
     } else {
       showToast(`Error: ${data.detail || "Failed to save settings"}`, true);
       saveBtn.disabled = false;
-      saveBtn.innerText = "💾 Save All Settings";
+      saveBtn.innerText = "💾 Save Settings (Staged)";
     }
   } catch (err) {
     showToast(`Error: ${err.message}`, true);
     saveBtn.disabled = false;
-    saveBtn.innerText = "💾 Save All Settings";
+    saveBtn.innerText = "💾 Save Settings (Staged)";
+  }
+}
+
+async function handleReloadService() {
+  if (!confirm("Are you sure you want to reload the service and activate all staged settings?")) return;
+
+  const btns = [document.getElementById("btnReloadTop"), document.querySelector("button[onclick='handleReloadService()']")];
+  btns.forEach(b => { if (b) { b.disabled = true; b.innerText = "Reloading..."; } });
+
+  try {
+    const res = await fetch("/api/v1/system/settings/reload", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    });
+
+    const data = await res.json();
+    if (res.ok) {
+      showToast(data.message || "Settings applied and service reloaded successfully!");
+      setTimeout(() => window.location.reload(), 1200);
+    } else {
+      showToast(`Reload error: ${data.detail || "Failed to reload"}`, true);
+      btns.forEach(b => { if (b) { b.disabled = false; b.innerText = "↻ Reload Service & Apply Settings"; } });
+    }
+  } catch (err) {
+    showToast(`Reload error: ${err.message}`, true);
+    btns.forEach(b => { if (b) { b.disabled = false; b.innerText = "↻ Reload Service & Apply Settings"; } });
   }
 }
 </script>

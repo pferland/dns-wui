@@ -455,11 +455,13 @@ async def settings_page(
         return RedirectResponse(url="/login")
 
     from app.services.settings_service import get_all_settings_view
-    all_settings = await get_all_settings_view(session)
+    view_data = await get_all_settings_view(session)
+    settings_items = view_data.get("settings", [])
+    has_pending = view_data.get("has_pending_changes", False)
 
     # Group settings by category
     categories: dict[str, list] = {}
-    for item in all_settings:
+    for item in settings_items:
         categories.setdefault(item["category"], []).append(item)
 
     return templates.TemplateResponse(
@@ -469,7 +471,9 @@ async def settings_page(
             "user": user,
             "active_page": "settings",
             "categories": categories,
+            "has_pending_changes": has_pending,
         },
     )
+
 
 
