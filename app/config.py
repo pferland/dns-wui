@@ -56,6 +56,8 @@ class Settings(BaseSettings):
     # SOA & PTR Configuration
     DEFAULT_SOA_STRATEGY: Literal["date_revision", "increment"] = "date_revision"
     AUTO_PTR_SYNC: bool = True
+    OVERRIDE_ZONE_NAME: str = "rpz.overrides.local"
+    OVERRIDE_ZONE_FILE: Path | None = None  # defaults to ZONES_DIR / "rpz.overrides.local"
     IGNORED_ZONES: list[str] = [
         "rpz.adblock.spam.local",
         "0.in-addr.arpa",

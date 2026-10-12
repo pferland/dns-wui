@@ -1,0 +1,186 @@
+{% extends "base.html" %}
+
+{% block title %}Local DNS Overrides - BIND 9 Manager{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Local DNS Overrides</h1>
+    <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.25rem;">
+      Selective split-horizon routing via Response Policy Zone (<code>{{ override_zone }}</code>). Intercepts specific hostnames without altering cloud master zones.
+    </p>
+  </div>
+  <div>
+    <button class="btn btn-primary btn-sm" onclick="openAddOverrideModal()">+ New Override</button>
+  </div>
+</div>
+
+<!-- Search & Counter -->
+<div style="margin-bottom: 1rem; display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap;">
+  <div style="position: relative; max-width: 420px; width: 100%;">
+    <input type="text" placeholder="Filter overrides by FQDN or target IP..." class="form-control" oninput="filterOverrides(this.value)">
+  </div>
+  <div style="color: var(--text-muted); font-size: 0.82rem;">
+    Total Overrides: <strong>{{ overrides|length }}</strong>
+  </div>
+</div>
+
+<!-- Overrides Data Table -->
+<div class="data-table-container">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th style="width: 35%;">Intercepted FQDN (Host)</th>
+        <th style="width: 12%;">Type</th>
+        <th style="width: 12%;">TTL</th>
+        <th style="width: 26%;">Local Destination (LAN Target)</th>
+        <th style="width: 15%; text-align: right;">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for o in overrides %}
+        <tr class="override-row">
+          <td><strong style="color: #60a5fa;" class="font-mono">{{ o.fqdn }}</strong></td>
+          <td><span class="badge badge-{{ o.record_type }}">{{ o.record_type }}</span></td>
+          <td style="color: var(--text-dim);" class="font-mono">{{ o.ttl }}s</td>
+          <td><code style="color: #a5b4fc;" class="font-mono">{{ o.target }}</code></td>
+          <td style="text-align: right;">
+            <div style="display: inline-flex; gap: 0.35rem;">
+              <button class="btn btn-secondary btn-sm" onclick="openEditOverrideModal('{{ o.fqdn }}', '{{ o.record_type }}', '{{ o.target }}', {{ o.ttl }})">&#9998; Edit</button>
+              <button class="btn btn-danger btn-sm" onclick="handleDeleteOverride('{{ o.fqdn }}')">&times;</button>
+            </div>
+          </td>
+        </tr>
+      {% else %}
+        <tr>
+          <td colspan="5" style="text-align: center; padding: 3rem 1rem; color: var(--text-dim);">
+            No local DNS overrides configured yet. Click <strong>+ New Override</strong> to intercept your first cloud domain.
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<!-- Add/Edit Override Modal -->
+<div id="addOverrideModal" class="modal-backdrop">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3 class="modal-title" id="overrideModalTitle">Add Local DNS Override</h3>
+      <button class="btn btn-secondary btn-sm" onclick="closeModal('addOverrideModal')">&times;</button>
+    </div>
+    <form id="overrideForm" onsubmit="handleSaveOverride(event)">
+      <div class="form-group">
+        <label for="overrideFqdn">Intercepted Hostname / FQDN</label>
+        <input type="text" id="overrideFqdn" required placeholder="e.g. app.example.com or nas.mydomain.org" class="form-control">
+        <small style="color: var(--text-dim); font-size: 0.75rem;">The external cloud domain hostname you want your local LAN to resolve privately.</small>
+      </div>
+
+      <div class="form-group" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+        <div>
+          <label for="overrideType">Record Type</label>
+          <select id="overrideType" class="form-control">
+            <option value="A">A (IPv4)</option>
+            <option value="AAAA">AAAA (IPv6)</option>
+            <option value="CNAME">CNAME (Alias)</option>
+          </select>
+        </div>
+        <div>
+          <label for="overrideTtl">TTL (Seconds)</label>
+          <input type="number" id="overrideTtl" required value="300" class="form-control">
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="overrideTarget">Local Target IP / Alias</label>
+        <input type="text" id="overrideTarget" required placeholder="e.g. 192.168.1.50 or core.home.randomintervals.com." class="form-control font-mono">
+      </div>
+
+      <div style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1.25rem;">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('addOverrideModal')">Cancel</button>
+        <button type="submit" class="btn btn-primary" id="btnSubmitOverride">Save & Reload BIND</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function filterOverrides(query) {
+  const q = query.toLowerCase().trim();
+  const rows = document.querySelectorAll(".override-row");
+  rows.forEach(r => {
+    r.style.display = r.innerText.toLowerCase().includes(q) ? "" : "none";
+  });
+}
+
+function openAddOverrideModal() {
+  document.getElementById("overrideModalTitle").innerText = "Add Local DNS Override";
+  document.getElementById("overrideForm").reset();
+  document.getElementById("overrideFqdn").readOnly = false;
+  document.getElementById("overrideTtl").value = 300;
+  openModal("addOverrideModal");
+}
+
+function openEditOverrideModal(fqdn, type, target, ttl) {
+  document.getElementById("overrideModalTitle").innerText = "Edit Local DNS Override";
+  document.getElementById("overrideFqdn").value = fqdn;
+  document.getElementById("overrideFqdn").readOnly = true;
+  document.getElementById("overrideType").value = type;
+  document.getElementById("overrideTarget").value = target;
+  document.getElementById("overrideTtl").value = ttl;
+  openModal("addOverrideModal");
+}
+
+async function handleSaveOverride(e) {
+  e.preventDefault();
+  const btn = document.getElementById("btnSubmitOverride");
+  btn.disabled = true;
+  btn.innerText = "Applying to BIND...";
+
+  const fqdn = document.getElementById("overrideFqdn").value.trim();
+  const type = document.getElementById("overrideType").value;
+  const target = document.getElementById("overrideTarget").value.trim();
+  const ttl = parseInt(document.getElementById("overrideTtl").value, 10);
+
+  try {
+    const res = await fetch("/api/v1/overrides", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fqdn: fqdn, target: target, record_type: type, ttl: ttl }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      showToast(data.message || "Override applied!");
+      setTimeout(() => window.location.reload(), 1000);
+    } else {
+      showToast(`Error: ${data.detail}`, true);
+      btn.disabled = false;
+      btn.innerText = "Save & Reload BIND";
+    }
+  } catch (err) {
+    showToast(`Failed: ${err}`, true);
+    btn.disabled = false;
+    btn.innerText = "Save & Reload BIND";
+  }
+}
+
+async function handleDeleteOverride(fqdn) {
+  if (!confirm(`Are you sure you want to remove the local override for '${fqdn}'?`)) return;
+
+  try {
+    const res = await fetch(`/api/v1/overrides/${encodeURIComponent(fqdn)}`, { method: "DELETE" });
+    const data = await res.json();
+    if (res.ok) {
+      showToast(data.message || "Override removed!");
+      setTimeout(() => window.location.reload(), 800);
+    } else {
+      showToast(`Error: ${data.detail}`, true);
+    }
+  } catch (err) {
+    showToast(`Failed: ${err}`, true);
+  }
+}
+</script>
+{% endblock %}

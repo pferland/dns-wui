@@ -24,6 +24,7 @@ from app.services.security import (
 )
 from app.bind.discovery import get_all_zones
 from app.bind.parser import parse_zone_file
+from app.bind.overrides import list_overrides
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("dns-wui")
@@ -324,6 +325,27 @@ async def two_factor_page(
         context={
             "user": user,
             "active_page": "2fa",
+        },
+    )
+
+
+@app.get("/overrides", response_class=HTMLResponse)
+async def overrides_page(
+    request: Request,
+    user: User | None = Depends(get_current_user_optional),
+):
+    if not user and settings.AUTH_MODE not in ("none",):
+        return RedirectResponse(url="/login")
+
+    overrides = list_overrides()
+    return templates.TemplateResponse(
+        request=request,
+        name="overrides.html",
+        context={
+            "user": user,
+            "active_page": "overrides",
+            "override_zone": settings.OVERRIDE_ZONE_NAME,
+            "overrides": overrides,
         },
     )
 
