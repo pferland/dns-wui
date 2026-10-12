@@ -105,9 +105,36 @@ async function reloadZone(zoneName, btn) {
     btn.disabled = false;
     btn.innerText = orig;
   }
+// Table Filter for Zones
+function filterZonesTable(query) {
+  const q = query.toLowerCase().trim();
+  const rows = document.querySelectorAll(".zone-row");
+  rows.forEach(row => {
+    const text = row.innerText.toLowerCase();
+    row.style.display = text.includes(q) ? "" : "none";
+  });
 }
 
-document.addEventListener("DOMContentLoaded", () => {
+// Global BIND validation test from topbar
+async function runCheckconfGlobal(btn) {
+  const orig = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerText = "Checking...";
+  try {
+    const res = await fetch("/api/v1/system/checkconf", { method: "POST" });
+    const data = await res.json();
+    if (res.ok && data.valid) {
+      showToast("BIND 9 Configuration Valid: named-checkconf OK");
+    } else {
+      showToast(`Syntax Error: ${data.message || data.detail}`, true);
+    }
+  } catch (err) {
+    showToast(`Validation Error: ${err}`, true);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = orig;
+  }
+}
   const savedMode = localStorage.getItem("dns_view_mode") || "cards";
   setViewMode(savedMode);
 });

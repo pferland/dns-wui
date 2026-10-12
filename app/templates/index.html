@@ -5,119 +5,84 @@
 {% block content %}
 <div class="page-header">
   <div>
-    <h1 class="page-title">DNS Zones</h1>
-    <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 0.25rem;">
-      Managing local BIND 9 configuration on <code>{{ bind_host }}</code>
+    <h1 class="page-title">
+      {% if filter_type == 'forward' %}Forward DNS Zones
+      {% elif filter_type == 'reverse' %}Reverse PTR Zones
+      {% else %}All Managed DNS Zones
+      {% endif %}
+    </h1>
+    <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.25rem;">
+      Local BIND 9 configuration on <code>{{ bind_host }}</code> &bull; Path: <code>{{ zones_dir }}</code>
     </p>
   </div>
   <div style="display: flex; gap: 0.6rem; align-items: center;">
-    <!-- Ignored Zones Toggle -->
     {% if include_ignored %}
-      <a href="/" class="btn btn-secondary btn-sm" title="Hide system default / adblock zones" style="text-decoration: none;">&#128065; Active Zones Only</a>
+      <a href="/{% if filter_type %}?type={{ filter_type }}{% endif %}" class="btn btn-secondary btn-sm" title="Hide system default and adblock zones">Active Zones Only</a>
     {% else %}
-      <a href="/?include_ignored=true" class="btn btn-secondary btn-sm" title="Show all system and adblock zones" style="text-decoration: none;">&#128065; Show All (Including Ignored)</a>
+      <a href="/?include_ignored=true{% if filter_type %}&type={{ filter_type }}{% endif %}" class="btn btn-secondary btn-sm" title="Show system default and adblock zones">Show Ignored System Zones</a>
     {% endif %}
-
-    <!-- View Switcher -->
-    <div style="display: flex; background: var(--bg-card); border-radius: 6px; padding: 2px; border: 1px solid var(--border-color);">
-      <button id="btnViewCards" class="btn btn-primary btn-sm" onclick="setViewMode('cards')">&#9638; Cards</button>
-      <button id="btnViewTable" class="btn btn-secondary btn-sm" onclick="setViewMode('table')">&#9776; Table</button>
-    </div>
-    <button class="btn btn-primary" onclick="openModal('createZoneModal')">+ Create Zone</button>
+    <button class="btn btn-primary btn-sm" onclick="openModal('createZoneModal')">+ Create Zone</button>
   </div>
 </div>
 
-<!-- Utilitarian Status Bar -->
-<div class="status-bar">
-  <div class="status-item">
-    <span class="status-label">ZONES:</span>
-    <span class="status-val">{{ zones|length }}</span>
+<!-- Instant Table Search / Filter -->
+<div style="margin-bottom: 1rem; display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap;">
+  <div style="position: relative; max-width: 420px; width: 100%;">
+    <input type="text" id="zoneSearchInput" placeholder="Filter zones by origin domain or file path..." class="form-control" oninput="filterZonesTable(this.value)">
   </div>
-  <div class="status-item">
-    <span class="status-label">FORWARD:</span>
-    <span class="status-val">{{ forward_count }}</span>
-  </div>
-  <div class="status-item">
-    <span class="status-label">REVERSE:</span>
-    <span class="status-val">{{ reverse_count }}</span>
-  </div>
-  <div class="status-item" style="margin-left: auto;">
-    <span class="status-label">ROOT:</span>
-    <code class="status-code">{{ zones_dir }}</code>
+  <div style="color: var(--text-muted); font-size: 0.82rem;">
+    Showing <strong>{{ zones|length }}</strong> zones ({{ forward_count }} Forward &bull; {{ reverse_count }} Reverse)
   </div>
 </div>
 
-<!-- 1. Cards View -->
-<div id="viewCards" class="zones-grid">
-  {% for z in zones %}
-    <div class="zone-card">
-      <div class="zone-card-header">
-        <div class="zone-name">{{ z.name }}</div>
-        {% if z.is_reverse %}
-          <span class="badge badge-reverse">REVERSE</span>
-        {% else %}
-          <span class="badge badge-forward">FORWARD</span>
-        {% endif %}
-      </div>
-      <div class="zone-meta">{{ z.file_path }}</div>
-      <div class="zone-stats">
-        <span><strong>{{ z.record_count }}</strong> Records</span>
-        {% if z.serial %}
-          <span>Serial: <strong>{{ z.serial }}</strong></span>
-        {% endif %}
-      </div>
-      <div class="zone-actions">
-        <a href="/zones/{{ z.name }}" class="btn btn-primary btn-sm">&#9881; Manage Records</a>
-        <a href="/zones/{{ z.name }}/raw" class="btn btn-secondary btn-sm">&#9998; Raw File</a>
-        <button class="btn btn-secondary btn-sm" onclick="reloadZone('{{ z.name }}', this)">&#8635; Reload</button>
-      </div>
-    </div>
-  {% else %}
-    <div style="grid-column: 1 / -1; text-align: center; padding: 4rem 1rem; color: var(--text-muted);">
-      <h3>No Zones Discovered</h3>
-      <p style="margin-top: 0.5rem;">Click "+ Create Zone" to initialize your first forward or reverse zone.</p>
-    </div>
-  {% endfor %}
-</div>
-
-<!-- 2. Compact Sysadmin Table View -->
-<div id="viewTable" class="data-table-container" style="display: none;">
-  <table class="data-table">
+<!-- Primary Enterprise Data Table View -->
+<div class="data-table-container">
+  <table class="data-table" id="zonesDataTable">
     <thead>
       <tr>
-        <th>Zone Origin</th>
-        <th>Type</th>
-        <th>Records</th>
-        <th>SOA Serial</th>
-        <th>File Path</th>
-        <th>Source</th>
-        <th style="text-align: right;">Actions</th>
+        <th style="width: 28%;">Zone Origin</th>
+        <th style="width: 12%;">Type</th>
+        <th style="width: 10%;">Records</th>
+        <th style="width: 12%;">SOA Serial</th>
+        <th style="width: 23%;">Configuration Target</th>
+        <th style="width: 15%; text-align: right;">Actions</th>
       </tr>
     </thead>
     <tbody>
       {% for z in zones %}
-        <tr>
-          <td><a href="/zones/{{ z.name }}" style="font-weight: 700; color: var(--accent);">{{ z.name }}</a></td>
+        <tr class="zone-row">
+          <td>
+            <a href="/zones/{{ z.name }}" style="font-weight: 700; color: #60a5fa; font-size: 0.9rem;" class="zone-name-cell">{{ z.name }}</a>
+          </td>
           <td>
             {% if z.is_reverse %}
-              <span class="badge badge-reverse">REVERSE</span>
+              <span class="badge badge-reverse">PTR REVERSE</span>
             {% else %}
               <span class="badge badge-forward">FORWARD</span>
             {% endif %}
           </td>
-          <td>{{ z.record_count }}</td>
-          <td><code style="font-family: monospace;">{{ z.serial or 'N/A' }}</code></td>
-          <td><span style="font-family: monospace; font-size: 0.8rem; color: var(--text-dim);">{{ z.file_path }}</span></td>
-          <td><span style="font-size: 0.8rem; color: var(--text-dim);">{{ z.source }}</span></td>
+          <td>
+            <span style="font-weight: 600;">{{ z.record_count }}</span>
+          </td>
+          <td>
+            <code style="color: #94a3b8; font-size: 0.82rem;">{{ z.serial or 'N/A' }}</code>
+          </td>
+          <td>
+            <span style="color: var(--text-dim); font-size: 0.78rem;" class="zone-path-cell font-mono">{{ z.file_path }}</span>
+          </td>
           <td style="text-align: right;">
-            <a href="/zones/{{ z.name }}" class="btn btn-primary btn-sm">Manage</a>
-            <a href="/zones/{{ z.name }}/raw" class="btn btn-secondary btn-sm">Raw</a>
-            <button class="btn btn-secondary btn-sm" onclick="reloadZone('{{ z.name }}', this)">&#8635;</button>
+            <div style="display: inline-flex; gap: 0.35rem;">
+              <a href="/zones/{{ z.name }}" class="btn btn-secondary btn-sm" title="Manage DNS records">Manage</a>
+              <a href="/zones/{{ z.name }}/raw" class="btn btn-secondary btn-sm" title="Edit raw zone text">Raw</a>
+              <button class="btn btn-secondary btn-sm" onclick="reloadZone('{{ z.name }}', this)" title="Reload via rndc">&#8635;</button>
+            </div>
           </td>
         </tr>
       {% else %}
         <tr>
-          <td colspan="7" style="text-align: center; padding: 2rem; color: var(--text-dim);">No zones discovered.</td>
+          <td colspan="6" style="text-align: center; padding: 3rem 1rem; color: var(--text-dim);">
+            No matching DNS zones discovered.
+          </td>
         </tr>
       {% endfor %}
     </tbody>

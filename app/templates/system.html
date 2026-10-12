@@ -15,42 +15,84 @@
   </div>
 </div>
 
-<div style="background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: var(--radius); padding: 1.5rem; margin-bottom: 1.5rem;">
-  <h2 style="font-size: 1.15rem; margin-bottom: 1rem;">BIND 9 System Status</h2>
-  
-  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; font-size: 0.9rem;">
-    <div>
-      <span style="color: var(--text-dim);">Configuration File:</span><br>
-      <code>{{ status.named_conf_path }}</code> 
-      {% if status.named_conf_exists %}<span style="color: var(--success);">&#10003; Exists</span>{% else %}<span style="color: var(--warning);">&#9888; Missing</span>{% endif %}
-    </div>
-
-    <div>
-      <span style="color: var(--text-dim);">Zones Directory:</span><br>
-      <code>{{ status.zones_dir }}</code>
-      {% if status.zones_dir_exists %}<span style="color: var(--success);">&#10003; Exists</span>{% else %}<span style="color: var(--warning);">&#9888; Missing</span>{% endif %}
-    </div>
-
-    <div>
-      <span style="color: var(--text-dim);">named-checkzone binary:</span><br>
-      {% if status.checkzone_bin %}<code style="color: #60a5fa;">{{ status.checkzone_bin }}</code>{% else %}<span style="color: var(--warning);">Not found (using pure dnspython)</span>{% endif %}
-    </div>
-
-    <div>
-      <span style="color: var(--text-dim);">named-checkconf binary:</span><br>
-      {% if status.checkconf_bin %}<code style="color: #60a5fa;">{{ status.checkconf_bin }}</code>{% else %}<span style="color: var(--warning);">Not found</span>{% endif %}
-    </div>
-
-    <div>
-      <span style="color: var(--text-dim);">rndc binary:</span><br>
-      {% if status.rndc_bin %}<code style="color: #60a5fa;">{{ status.rndc_bin }}</code>{% else %}<span style="color: var(--warning);">Not found (local mode)</span>{% endif %}
-    </div>
-
-    <div>
-      <span style="color: var(--text-dim);">Automatic Reverse PTR Sync:</span><br>
-      <strong>{% if status.auto_ptr_sync %}Enabled{% else %}Disabled{% endif %}</strong>
-    </div>
-  </div>
+<div class="data-table-container">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th style="width: 25%;">Component / Parameter</th>
+        <th style="width: 45%;">Configured Target</th>
+        <th style="width: 30%;">Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Configuration File</strong></td>
+        <td><code class="font-mono">{{ status.named_conf_path }}</code></td>
+        <td>
+          {% if status.named_conf_exists %}
+            <span style="color: var(--success); font-weight: 600;">&#10003; Active & Verified</span>
+          {% else %}
+            <span style="color: var(--danger); font-weight: 600;">&#9888; Missing</span>
+          {% endif %}
+        </td>
+      </tr>
+      <tr>
+        <td><strong>Zones Root Directory</strong></td>
+        <td><code class="font-mono">{{ status.zones_dir }}</code></td>
+        <td>
+          {% if status.zones_dir_exists %}
+            <span style="color: var(--success); font-weight: 600;">&#10003; Writable Directory</span>
+          {% else %}
+            <span style="color: var(--danger); font-weight: 600;">&#9888; Missing</span>
+          {% endif %}
+        </td>
+      </tr>
+      <tr>
+        <td><strong>named-checkconf Binary</strong></td>
+        <td><code class="font-mono">{{ status.checkconf_bin or 'None' }}</code></td>
+        <td>
+          {% if status.checkconf_bin %}
+            <span style="color: var(--success); font-weight: 600;">&#10003; Ready</span>
+          {% else %}
+            <span style="color: var(--warning); font-weight: 600;">Missing</span>
+          {% endif %}
+        </td>
+      </tr>
+      <tr>
+        <td><strong>named-checkzone Binary</strong></td>
+        <td><code class="font-mono">{{ status.checkzone_bin or 'None' }}</code></td>
+        <td>
+          {% if status.checkzone_bin %}
+            <span style="color: var(--success); font-weight: 600;">&#10003; Ready</span>
+          {% else %}
+            <span style="color: var(--warning); font-weight: 600;">Pure dnspython Engine</span>
+          {% endif %}
+        </td>
+      </tr>
+      <tr>
+        <td><strong>rndc Control Binary</strong></td>
+        <td><code class="font-mono">{{ status.rndc_bin or 'None' }}</code></td>
+        <td>
+          {% if status.rndc_bin %}
+            <span style="color: var(--success); font-weight: 600;">&#10003; Local 127.0.0.1:953 Connected</span>
+          {% else %}
+            <span style="color: var(--warning); font-weight: 600;">Direct File Only</span>
+          {% endif %}
+        </td>
+      </tr>
+      <tr>
+        <td><strong>Reverse PTR Synchronization</strong></td>
+        <td><code>RFC 2317 / 1035 Reverse Sync</code></td>
+        <td>
+          {% if status.auto_ptr_sync %}
+            <span style="color: var(--success); font-weight: 600;">&#10003; Enabled (A/AAAA &rarr; PTR)</span>
+          {% else %}
+            <span style="color: var(--text-dim);">Disabled</span>
+          {% endif %}
+        </td>
+      </tr>
+    </tbody>
+  </table>
 </div>
 {% endblock %}
 

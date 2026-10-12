@@ -70,23 +70,25 @@ from app.api.zones import _quick_inspect_zone
 async def index_page(
     request: Request,
     include_ignored: bool = False,
+    type: str | None = None,
     session: AsyncSession = Depends(get_session),
     user: User | None = Depends(get_current_user_optional),
 ):
     if not user and settings.AUTH_MODE not in ("none",):
         return RedirectResponse(url="/login")
 
-    zones = get_all_zones(include_ignored=include_ignored)
+    all_discovered = get_all_zones(include_ignored=include_ignored)
+    forward_total = sum(1 for z in all_discovered if not z.is_reverse)
+    reverse_total = sum(1 for z in all_discovered if z.is_reverse)
+
+    filtered_zones = all_discovered
+    if type == "forward":
+        filtered_zones = [z for z in all_discovered if not z.is_reverse]
+    elif type == "reverse":
+        filtered_zones = [z for z in all_discovered if z.is_reverse]
+
     zone_list = []
-    forward_count = 0
-    reverse_count = 0
-
-    for z in zones:
-        if z.is_reverse:
-            reverse_count += 1
-        else:
-            forward_count += 1
-
+    for z in filtered_zones:
         record_count = 0
         serial = None
         if z.file_path.exists():
@@ -108,10 +110,11 @@ async def index_page(
         context={
             "user": user,
             "active_page": "zones",
+            "filter_type": type,
             "bind_host": "192.168.1.3",
             "zones": zone_list,
-            "forward_count": forward_count,
-            "reverse_count": reverse_count,
+            "forward_count": forward_total,
+            "reverse_count": reverse_total,
             "zones_dir": str(settings.ZONES_DIR),
             "include_ignored": include_ignored,
         },
