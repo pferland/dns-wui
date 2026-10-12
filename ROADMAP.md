@@ -32,6 +32,10 @@ This document tracks prioritized future features and operational improvements fo
   - Automatically append `type slave;` / `type secondary;` blocks with specified cloud master nameserver IPs (`primaries { <IP>; };`).
   - Supports RFC 1996 `NOTIFY` and RFC 5936 `AXFR`/`IXFR` incremental zone transfers so local zone copies automatically stay synchronized with cloud providers in real-time.
   - UI displays synchronized slave records in a read-only table with transfer health indicators, last sync timestamps, and a manual **"Sync Now / Retransfer"** (`rndc retransfer <zone>`) trigger.
+- **Local DNS Split-Horizon Overrides (RPZ-Powered Custom LAN Intercepts)**
+  - Dedicated **"Local Overrides"** section in the UI to selectively redirect specific subdomains of secondary or cloud-mirrored zones (e.g. pointing `app.example.com` or `nas.example.com` to internal LAN IPs `192.168.1.x` instead of public WAN IPs).
+  - Uses a dedicated high-priority Response Policy Zone (`rpz.local-overrides`) evaluated before external resolution.
+  - Leaves the secondary cloud zone 100% pure and untouched while providing instant table-based addition, editing, and toggling of local host overrides.
 - **Bulk Record Import & Export**
   - Upload standard RFC 1035 zone files, CSV, or JSON record sets.
   - 1-click download of all zones as backup archive or single `.zone` exports.
