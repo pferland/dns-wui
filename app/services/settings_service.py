@@ -22,8 +22,6 @@ CONFIGURABLE_FIELDS = {
     "IGNORED_ZONES": {"type": "list", "category": "DNS Operations", "description": "Ignored/hidden zones (comma-separated or JSON list)"},
     "AUTH_MODE": {"type": "choice", "choices": ["local", "hybrid", "none"], "category": "Security & Auth", "description": "Authentication mode"},
     "JWT_EXPIRATION_HOURS": {"type": "int", "category": "Security & Auth", "description": "JWT session token lifespan in hours"},
-    "TOTP_ENABLED": {"type": "bool", "category": "Security & Auth", "description": "Enable two-factor authentication (TOTP)"},
-    "TOTP_ISSUER": {"type": "str", "category": "Security & Auth", "description": "Issuer name displayed in authenticator apps"},
     "OIDC_ENABLED": {"type": "bool", "category": "Single Sign-On (OIDC)", "description": "Enable OpenID Connect SSO"},
     "OIDC_ISSUER_URL": {"type": "str", "category": "Single Sign-On (OIDC)", "description": "OIDC Provider Issuer Discovery URL"},
     "OIDC_CLIENT_ID": {"type": "str", "category": "Single Sign-On (OIDC)", "description": "OIDC Client ID"},

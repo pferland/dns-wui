@@ -1,12 +1,9 @@
-import pyotp
-from app.services.security import (
-    hash_password,
-    verify_password,
-    generate_totp_secret,
-    get_totp_uri,
-    verify_totp,
-    generate_qr_code_base64,
-)
+import pytest
+from httpx import AsyncClient, ASGITransport
+from app.main import app
+from app.config import settings
+from app.database import init_db
+from app.services.security import hash_password, verify_password
 
 
 def test_password_argon2():
@@ -17,20 +14,17 @@ def test_password_argon2():
     assert verify_password("wrong-password", hashed) is False
 
 
-def test_totp_2fa_lifecycle():
-    secret = generate_totp_secret()
-    assert len(secret) == 32
-
-    uri = get_totp_uri(secret, "admin")
-    assert "otpauth://totp/" in uri
-    assert "admin" in uri
-
-    qr = generate_qr_code_base64(uri)
-    assert qr.startswith("data:image/png;base64,")
-
-    # Generate current valid code with pyotp
-    totp = pyotp.TOTP(secret)
-    current_code = totp.now()
-
-    assert verify_totp(secret, current_code) is True
-    assert verify_totp(secret, "000000") is False
+@pytest.mark.asyncio
+async def test_direct_login_no_mfa():
+    await init_db()
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        res = await client.post(
+            "/api/v1/auth/login",
+            json={"username": settings.ADMIN_USERNAME, "password": settings.ADMIN_PASSWORD},
+        )
+        assert res.status_code == 200
+        data = res.json()
+        assert data["access_token"] is not None
+        assert data["requires_2fa"] is False
+        assert "access_token" in res.cookies

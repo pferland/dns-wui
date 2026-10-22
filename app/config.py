@@ -99,10 +99,6 @@ class Settings(BaseSettings):
     ADMIN_USERNAME: str = "admin"
     ADMIN_PASSWORD: str = "admin123"
 
-    # TOTP 2FA
-    TOTP_ENABLED: bool = True
-    TOTP_ISSUER: str = "BIND9-DNS-WUI"
-
     # OIDC (Optional)
     OIDC_ENABLED: bool = False
     OIDC_ISSUER_URL: str | None = None

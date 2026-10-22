@@ -21,7 +21,6 @@ from app.services.security import (
     verify_password,
     create_access_token,
     decode_access_token,
-    verify_totp,
 )
 from app.services.oidc_service import (
     build_authorization_url,
@@ -250,72 +249,7 @@ async def login_post(
                 "step": "credentials",
                 "error": "Invalid username or password",
                 "active_page": "login",
-            },
-            status_code=status.HTTP_401_UNAUTHORIZED,
-        )
-
-    if user.totp_enabled:
-        temp_token = create_access_token(
-            data={"sub": str(user.id), "scope": "2fa_pending"},
-            expires_delta=timedelta(minutes=5),
-        )
-        return templates.TemplateResponse(
-            request=request,
-            name="login.html",
-            context={
-                "user": None,
-                "step": "2fa",
-                "temp_token": temp_token,
-                "error": None,
-                "active_page": "login",
-            },
-        )
-
-    token = create_access_token(data={"sub": str(user.id), "username": user.username})
-    redirect = RedirectResponse(url="/", status_code=status.HTTP_302_FOUND)
-    redirect.set_cookie(
-        key="access_token",
-        value=token,
-        httponly=True,
-        samesite="lax",
-        max_age=settings.JWT_EXPIRATION_HOURS * 3600,
-    )
-    return redirect
-
-
-@app.post("/login/2fa", response_class=HTMLResponse)
-async def login_2fa_post(
-    request: Request,
-    temp_token: str = Form(...),
-    code: str = Form(...),
-    session: AsyncSession = Depends(get_session),
-):
-    payload = decode_access_token(temp_token)
-    if not payload or payload.get("scope") != "2fa_pending":
-        return templates.TemplateResponse(
-            request=request,
-            name="login.html",
-            context={
-                "user": None,
-                "step": "credentials",
-                "error": "2FA session expired. Please sign in again.",
-                "active_page": "login",
-            },
-        )
-
-    user_id = int(payload["sub"])
-    res = await session.exec(select(User).where(User.id == user_id))
-    user = res.first()
-    if not user or not user.totp_secret or not verify_totp(user.totp_secret, code):
-        return templates.TemplateResponse(
-            request=request,
-            name="login.html",
-            context={
-                "user": None,
-                "step": "2fa",
-                "temp_token": temp_token,
-                "error": "Invalid verification code. Please check your authenticator app.",
-                "active_page": "login",
+                "oidc_enabled": settings.OIDC_ENABLED,
             },
             status_code=status.HTTP_401_UNAUTHORIZED,
         )
@@ -406,21 +340,8 @@ async def raw_zone_page(
 
 
 @app.get("/2fa", response_class=HTMLResponse)
-async def two_factor_page(
-    request: Request,
-    user: User | None = Depends(get_current_user_optional),
-):
-    if not user:
-        return RedirectResponse(url="/login")
-
-    return templates.TemplateResponse(
-        request=request,
-        name="two_factor.html",
-        context={
-            "user": user,
-            "active_page": "2fa",
-        },
-    )
+async def two_factor_page():
+    return RedirectResponse(url="/")
 
 
 @app.get("/overrides", response_class=HTMLResponse)
