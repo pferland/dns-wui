@@ -23,6 +23,10 @@ async def get_oidc_endpoints(issuer_url: str | None = None) -> dict[str, str]:
     if not issuer:
         raise ValueError("OIDC Issuer URL is not configured.")
 
+    # Normalize if user supplied full discovery document URL
+    if issuer.endswith("/.well-known/openid-configuration"):
+        issuer = issuer[:-len("/.well-known/openid-configuration")].rstrip("/")
+
     if issuer in _DISCOVERY_CACHE:
         return _DISCOVERY_CACHE[issuer]
 
