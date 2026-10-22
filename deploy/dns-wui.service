@@ -8,11 +8,8 @@ Type=simple
 User=bind
 Group=bind
 WorkingDirectory=/opt/dns-wui
+EnvironmentFile=-/opt/dns-wui/.env
 Environment=PYTHONUNBUFFERED=1
-Environment=DNS_WUI_SERVER_HOST=0.0.0.0
-Environment=DNS_WUI_SERVER_PORT=8008
-Environment=DNS_WUI_NAMED_CONF=/etc/bind/named.conf
-Environment=DNS_WUI_ZONES_DIR=/var/cache/bind/zones
 ExecStart=/opt/dns-wui/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8008
 Restart=always
 RestartSec=5s
