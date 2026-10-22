@@ -9,18 +9,24 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 import logging
+import secrets
 
 from app.config import settings
 from app.database import init_db, get_session
 from app.models.user import User
 from app.models.audit import AuditLog
 from app.api import api_router
-from app.api.deps import get_current_user_optional
+from app.api.deps import get_current_user_optional, log_audit
 from app.services.security import (
     verify_password,
     create_access_token,
     decode_access_token,
     verify_totp,
+)
+from app.services.oidc_service import (
+    build_authorization_url,
+    get_redirect_uri,
+    process_oidc_callback,
 )
 from app.bind.discovery import get_all_zones
 from app.bind.parser import parse_zone_file
@@ -128,7 +134,11 @@ async def index_page(
 
 
 @app.get("/login", response_class=HTMLResponse)
-async def login_get(request: Request, user: User | None = Depends(get_current_user_optional)):
+async def login_get(
+    request: Request,
+    error: str | None = None,
+    user: User | None = Depends(get_current_user_optional),
+):
     if user:
         return RedirectResponse(url="/")
     return templates.TemplateResponse(
@@ -137,10 +147,89 @@ async def login_get(request: Request, user: User | None = Depends(get_current_us
         context={
             "user": None,
             "step": "credentials",
-            "error": None,
+            "error": error,
             "active_page": "login",
+            "oidc_enabled": settings.OIDC_ENABLED,
         },
     )
+
+
+@app.get("/login/oidc")
+@app.get("/auth/oidc/login")
+async def oidc_login(request: Request):
+    """Initiate Single Sign-On (SSO) authorization flow with the OIDC identity provider."""
+    if not settings.OIDC_ENABLED or not settings.OIDC_ISSUER_URL or not settings.OIDC_CLIENT_ID:
+        return RedirectResponse(url="/login?error=OIDC+Single+Sign-On+is+not+enabled+or+configured")
+
+    state = secrets.token_urlsafe(16)
+    try:
+        auth_url, _ = await build_authorization_url(state=state, request=request)
+    except Exception as e:
+        logger.error(f"Failed to generate OIDC authorization URL: {e}")
+        return RedirectResponse(url=f"/login?error=Failed+to+initiate+SSO+login:+{e}")
+
+    response = RedirectResponse(url=auth_url, status_code=status.HTTP_302_FOUND)
+    response.set_cookie(
+        key="oidc_state",
+        value=state,
+        httponly=True,
+        samesite="lax",
+        max_age=300,
+    )
+    return response
+
+
+@app.get("/callback")
+@app.get("/auth/callback")
+@app.get("/api/v1/auth/oidc/callback")
+async def oidc_callback(
+    request: Request,
+    code: str | None = None,
+    state: str | None = None,
+    error: str | None = None,
+    error_description: str | None = None,
+    session: AsyncSession = Depends(get_session),
+):
+    """Handle incoming authorization code from OIDC identity provider, provision user, and establish session."""
+    if error:
+        err_msg = error_description or error or "OIDC login canceled or rejected"
+        logger.warning(f"OIDC callback received error: {err_msg}")
+        return RedirectResponse(url=f"/login?error={err_msg}")
+
+    if not code:
+        return RedirectResponse(url="/login?error=Missing+authorization+code+from+identity+provider")
+
+    cookie_state = request.cookies.get("oidc_state")
+    if cookie_state and state and cookie_state != state:
+        logger.warning("OIDC state mismatch in callback")
+        return RedirectResponse(url="/login?error=Invalid+session+state.+Please+try+logging+in+again.")
+
+    redirect_uri = get_redirect_uri(request)
+
+    try:
+        user, jwt_token = await process_oidc_callback(code=code, session=session, redirect_uri=redirect_uri)
+    except Exception as e:
+        logger.error(f"OIDC callback processing failed: {e}")
+        return RedirectResponse(url=f"/login?error=SSO+Authentication+Failed:+{e}")
+
+    await log_audit(
+        session=session,
+        username=user.username,
+        action="LOGIN_OIDC",
+        zone_name="AUTH",
+        details=f"Successful SSO login via OIDC ({user.role})",
+    )
+
+    redirect = RedirectResponse(url="/", status_code=status.HTTP_302_FOUND)
+    redirect.set_cookie(
+        key="access_token",
+        value=jwt_token,
+        httponly=True,
+        samesite="lax",
+        max_age=settings.JWT_EXPIRATION_HOURS * 3600,
+    )
+    redirect.delete_cookie("oidc_state")
+    return redirect
 
 
 @app.post("/login", response_class=HTMLResponse)

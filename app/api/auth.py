@@ -1,5 +1,7 @@
+import secrets
 from datetime import timedelta
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Response, Request, status
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -15,7 +17,12 @@ from app.services.security import (
     verify_totp,
     generate_qr_code_base64,
 )
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, log_audit
+from app.services.oidc_service import (
+    build_authorization_url,
+    get_redirect_uri,
+    process_oidc_callback,
+)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -177,3 +184,68 @@ async def get_me(user: User = Depends(get_current_user)) -> dict[str, str | bool
         "is_admin": user.is_admin,
         "totp_enabled": user.totp_enabled,
     }
+
+
+@router.get("/oidc/login")
+async def oidc_api_login(request: Request) -> RedirectResponse:
+    if not settings.OIDC_ENABLED or not settings.OIDC_ISSUER_URL or not settings.OIDC_CLIENT_ID:
+        raise HTTPException(status_code=400, detail="OIDC Single Sign-On is not enabled or configured")
+
+    state = secrets.token_urlsafe(16)
+    auth_url, _ = await build_authorization_url(state=state, request=request)
+    response = RedirectResponse(url=auth_url, status_code=status.HTTP_302_FOUND)
+    response.set_cookie(
+        key="oidc_state",
+        value=state,
+        httponly=True,
+        samesite="lax",
+        max_age=300,
+    )
+    return response
+
+
+@router.get("/oidc/callback")
+async def oidc_api_callback(
+    request: Request,
+    response: Response,
+    code: str | None = None,
+    state: str | None = None,
+    error: str | None = None,
+    error_description: str | None = None,
+    session: AsyncSession = Depends(get_session),
+) -> RedirectResponse:
+    if error:
+        err_msg = error_description or error or "OIDC login canceled or rejected"
+        return RedirectResponse(url=f"/login?error={err_msg}")
+
+    if not code:
+        return RedirectResponse(url="/login?error=Missing+authorization+code+from+identity+provider")
+
+    cookie_state = request.cookies.get("oidc_state")
+    if cookie_state and state and cookie_state != state:
+        return RedirectResponse(url="/login?error=Invalid+session+state.+Please+try+logging+in+again.")
+
+    redirect_uri = get_redirect_uri(request)
+    try:
+        user, jwt_token = await process_oidc_callback(code=code, session=session, redirect_uri=redirect_uri)
+    except Exception as e:
+        return RedirectResponse(url=f"/login?error=SSO+Authentication+Failed:+{e}")
+
+    await log_audit(
+        session=session,
+        username=user.username,
+        action="LOGIN_OIDC",
+        zone_name="AUTH",
+        details=f"Successful SSO login via OIDC ({user.role})",
+    )
+
+    redirect = RedirectResponse(url="/", status_code=status.HTTP_302_FOUND)
+    redirect.set_cookie(
+        key="access_token",
+        value=jwt_token,
+        httponly=True,
+        samesite="lax",
+        max_age=settings.JWT_EXPIRATION_HOURS * 3600,
+    )
+    redirect.delete_cookie("oidc_state")
+    return redirect
