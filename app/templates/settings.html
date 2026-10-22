@@ -21,7 +21,7 @@
   <div style="display: flex; align-items: center; gap: 0.75rem;">
     <span style="font-size: 1.5rem;">&#9888;</span>
     <div>
-      <strong style="color: #fbbf24; font-size: 0.95rem;">Pending Settings Changes Staged in Database</strong>
+      <strong style="color: #fbbf24; font-size: 0.95rem;">Pending Settings Changes Staged in Configuration File</strong>
       <p style="color: #cbd5e1; font-size: 0.82rem; margin-top: 0.2rem;">
         You have saved setting updates that are not yet active in the live runtime. Click <strong>Reload Service & Apply Settings</strong> to activate them now.
       </p>
@@ -137,7 +137,7 @@ async function handleSettingsSubmit(e) {
 
     const data = await res.json();
     if (res.ok) {
-      showToast(data.message || "Settings saved to database (pending reload)!");
+      showToast(data.message || "Settings saved to configuration file (pending reload)!");
       setTimeout(() => window.location.reload(), 1200);
     } else {
       showToast(`Error: ${data.detail || "Failed to save settings"}`, true);

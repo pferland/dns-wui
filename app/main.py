@@ -41,10 +41,8 @@ BASE_DIR = Path(__file__).resolve().parent
 async def lifespan(app: FastAPI):
     logger.info("Initializing DNS-WUI database and environment...")
     await init_db()
-    from app.database import async_session_maker
-    from app.services.settings_service import load_settings_from_db
-    async with async_session_maker() as session:
-        await load_settings_from_db(session)
+    from app.services.settings_service import load_settings_from_file
+    await load_settings_from_file()
     settings.ensure_directories()
     logger.info("DNS-WUI initialized and ready.")
     yield

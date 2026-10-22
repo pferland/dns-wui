@@ -9,7 +9,6 @@ from app.models.audit import AuditLog  # noqa: F401
 from app.models.revision import ZoneRevision  # noqa: F401
 from app.models.api_key import ApiKey  # noqa: F401
 from app.models.ddns import DdnsToken  # noqa: F401
-from app.models.setting import AppSetting  # noqa: F401
 from app.services.security import hash_password
 
 
@@ -37,6 +36,11 @@ async def init_db() -> None:
     settings.ensure_directories()
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
+        # Ensure deprecated app_settings table is removed from SQLite database
+        try:
+            await conn.execute(text("DROP TABLE IF EXISTS app_settings"))
+        except Exception:
+            pass
         # Migrate users table with role column if missing
         try:
             await conn.execute(text("ALTER TABLE users ADD COLUMN role VARCHAR DEFAULT 'admin'"))

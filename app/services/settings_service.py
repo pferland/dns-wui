@@ -1,9 +1,10 @@
 import json
+import configparser
 from typing import Any
-from sqlmodel import select
+from pathlib import Path
+from dotenv import dotenv_values, set_key
 from sqlmodel.ext.asyncio.session import AsyncSession
-from app.config import settings
-from app.models.setting import AppSetting
+from app.config import settings, get_config_file_path
 
 CONFIGURABLE_FIELDS = {
     "APP_NAME": {"type": "str", "category": "General", "description": "Display name of the application"},
@@ -30,19 +31,43 @@ CONFIGURABLE_FIELDS = {
 }
 
 
-async def load_settings_from_db(session: AsyncSession) -> None:
-    """Load persistent settings overrides from DB into runtime settings object."""
-    result = await session.exec(select(AppSetting))
-    db_settings = result.all()
-    for row in db_settings:
-        if row.key in CONFIGURABLE_FIELDS:
-            meta = CONFIGURABLE_FIELDS[row.key]
-            val = parse_setting_value(row.value, meta["type"])
-            settings.apply_override(row.key, val)
+def read_file_settings() -> dict[str, str]:
+    """Read raw setting key-value pairs from active config file (.env or config.ini)."""
+    config_path = get_config_file_path()
+    if not config_path.exists():
+        return {}
+
+    if config_path.suffix.lower() == ".ini":
+        cp = configparser.ConfigParser()
+        try:
+            cp.read(str(config_path), encoding="utf-8")
+            res: dict[str, str] = {}
+            for sec in cp.sections():
+                for k, v in cp.items(sec):
+                    k_upper = k.upper()
+                    if k_upper.startswith("DNS_WUI_"):
+                        k_upper = k_upper[8:]
+                    res[k_upper] = v
+            return res
+        except Exception:
+            return {}
+    else:
+        try:
+            raw_vals = dotenv_values(str(config_path))
+            res = {}
+            for k, v in raw_vals.items():
+                if v is not None:
+                    k_upper = k.upper()
+                    if k_upper.startswith("DNS_WUI_"):
+                        k_upper = k_upper[8:]
+                    res[k_upper] = v
+            return res
+        except Exception:
+            return {}
 
 
-def parse_setting_value(val_str: str, val_type: str) -> Any:
-    """Parse string value from DB/form into typed python value."""
+def parse_setting_value(val_str: Any, val_type: str) -> Any:
+    """Parse string or typed value from config file or UI into typed python value."""
     if val_type == "bool":
         if isinstance(val_str, bool):
             return val_str
@@ -69,57 +94,81 @@ def parse_setting_value(val_str: str, val_type: str) -> Any:
     return str(val_str).strip() if val_str is not None else ""
 
 
-async def save_settings_to_db(session: AsyncSession, new_settings: dict[str, Any]) -> dict[str, Any]:
-    """Persist settings to DB as staged configuration without auto-applying to live runtime."""
+async def save_settings_to_file(
+    new_settings: dict[str, Any], session: AsyncSession | None = None
+) -> dict[str, Any]:
+    """Persist settings to active config file (.env or config.ini) as staged configuration without auto-applying to live runtime."""
+    config_path = get_config_file_path()
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    if not config_path.exists():
+        config_path.touch(mode=0o640)
+
     saved = {}
-    for key, raw_val in new_settings.items():
-        if key not in CONFIGURABLE_FIELDS:
-            continue
-        meta = CONFIGURABLE_FIELDS[key]
-        parsed_val = parse_setting_value(raw_val, meta["type"])
+    is_ini = config_path.suffix.lower() == ".ini"
 
-        # Serialize for DB storage
-        if meta["type"] == "list":
-            stored_str = json.dumps(parsed_val)
-        elif meta["type"] == "bool":
-            stored_str = "true" if parsed_val else "false"
-        else:
-            stored_str = str(parsed_val) if parsed_val is not None else ""
+    if is_ini:
+        cp = configparser.ConfigParser()
+        if config_path.exists():
+            cp.read(str(config_path), encoding="utf-8")
+        if "dns_wui" not in cp:
+            cp["dns_wui"] = {}
+        for key, raw_val in new_settings.items():
+            if key not in CONFIGURABLE_FIELDS:
+                continue
+            meta = CONFIGURABLE_FIELDS[key]
+            parsed_val = parse_setting_value(raw_val, meta["type"])
+            if meta["type"] == "list":
+                stored_str = json.dumps(parsed_val)
+            elif meta["type"] == "bool":
+                stored_str = "true" if parsed_val else "false"
+            else:
+                stored_str = str(parsed_val) if parsed_val is not None else ""
+            cp["dns_wui"][key.lower()] = stored_str
+            saved[key] = parsed_val
+        with open(str(config_path), "w", encoding="utf-8") as f:
+            cp.write(f)
+    else:
+        # .env file
+        for key, raw_val in new_settings.items():
+            if key not in CONFIGURABLE_FIELDS:
+                continue
+            meta = CONFIGURABLE_FIELDS[key]
+            parsed_val = parse_setting_value(raw_val, meta["type"])
+            if meta["type"] == "list":
+                stored_str = json.dumps(parsed_val)
+            elif meta["type"] == "bool":
+                stored_str = "true" if parsed_val else "false"
+            else:
+                stored_str = str(parsed_val) if parsed_val is not None else ""
 
-        # Query or update row in database
-        result = await session.exec(select(AppSetting).where(AppSetting.key == key))
-        existing = result.first()
-        if existing:
-            existing.value = stored_str
-            session.add(existing)
-        else:
-            new_row = AppSetting(key=key, value=stored_str)
-            session.add(new_row)
+            set_key(str(config_path), key, stored_str, quote_mode="auto")
+            saved[key] = parsed_val
 
-        saved[key] = parsed_val
-
-    await session.commit()
     return saved
 
 
-async def apply_saved_settings(session: AsyncSession) -> dict[str, Any]:
-    """Load persistent settings from database and apply them into live runtime settings."""
-    result = await session.exec(select(AppSetting))
-    db_settings = result.all()
+async def apply_saved_settings(session: AsyncSession | None = None) -> dict[str, Any]:
+    """Load persistent settings from active config file (.env or config.ini) and apply into live runtime settings."""
+    file_settings = read_file_settings()
     applied = {}
-    for row in db_settings:
-        if row.key in CONFIGURABLE_FIELDS:
-            meta = CONFIGURABLE_FIELDS[row.key]
-            val = parse_setting_value(row.value, meta["type"])
-            settings.apply_override(row.key, val)
-            applied[row.key] = val
+    for key, raw_val in file_settings.items():
+        if key in CONFIGURABLE_FIELDS:
+            meta = CONFIGURABLE_FIELDS[key]
+            val = parse_setting_value(raw_val, meta["type"])
+            settings.apply_override(key, val)
+            applied[key] = val
+    settings.ensure_directories()
     return applied
 
 
-async def get_all_settings_view(session: AsyncSession) -> dict[str, Any]:
-    """Return all settings with metadata, staged DB value, live runtime value, and pending status."""
-    result = await session.exec(select(AppSetting))
-    db_map = {row.key: row.value for row in result.all()}
+async def load_settings_from_file(session: AsyncSession | None = None) -> None:
+    """Load settings overrides from active config file (.env or config.ini) into runtime settings."""
+    await apply_saved_settings(session=session)
+
+
+async def get_all_settings_view(session: AsyncSession | None = None) -> dict[str, Any]:
+    """Return all settings with metadata, staged file value, live runtime value, and pending status."""
+    file_map = read_file_settings()
 
     settings_list = []
     has_pending = False
@@ -129,16 +178,15 @@ async def get_all_settings_view(session: AsyncSession) -> dict[str, Any]:
         if hasattr(live_val, "as_posix"):
             live_val = str(live_val)
 
-        # Staged value in DB if any
-        if key in db_map:
-            staged_val = parse_setting_value(db_map[key], meta["type"])
+        # Staged value in file if any, else live_val
+        if key in file_map:
+            staged_val = parse_setting_value(file_map[key], meta["type"])
         else:
             staged_val = live_val
 
         # Compare if staged != live
         is_pending = False
-        if key in db_map:
-            # normalize for comparison
+        if key in file_map:
             staged_norm = str(staged_val) if meta["type"] != "list" else json.dumps(staged_val)
             live_norm = str(live_val) if meta["type"] != "list" else json.dumps(live_val)
             if staged_norm != live_norm:
@@ -159,5 +207,14 @@ async def get_all_settings_view(session: AsyncSession) -> dict[str, Any]:
     return {
         "settings": settings_list,
         "has_pending_changes": has_pending,
+        "config_file": str(get_config_file_path()),
     }
 
+
+# Backward-compatibility aliases
+async def save_settings_to_db(session: Any, new_settings: dict[str, Any]) -> dict[str, Any]:
+    return await save_settings_to_file(new_settings, session=session)
+
+
+async def load_settings_from_db(session: Any = None) -> None:
+    await load_settings_from_file(session=session)

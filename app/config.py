@@ -1,8 +1,71 @@
-from pathlib import Path
+import os
 import shutil
-from typing import Literal, Any
-from pydantic_settings import BaseSettings, SettingsConfigDict
+import configparser
+from pathlib import Path
+from typing import Literal, Any, Tuple, Type
+from pydantic_settings import (
+    BaseSettings,
+    SettingsConfigDict,
+    PydanticBaseSettingsSource,
+    EnvSettingsSource,
+    DotEnvSettingsSource,
+)
 
+
+def get_config_file_path() -> Path:
+    """Resolve the active configuration file (.env or config.ini)."""
+    custom = (
+        os.environ.get("DNS_WUI_ENV_FILE")
+        or os.environ.get("ENV_FILE")
+        or os.environ.get("DNS_WUI_CONFIG_FILE")
+    )
+    if custom:
+        return Path(custom)
+
+    candidates = [
+        Path.cwd() / "config.ini",
+        Path.cwd() / ".env",
+        Path(__file__).resolve().parent.parent / "config.ini",
+        Path(__file__).resolve().parent.parent / ".env",
+        Path("/opt/dns-wui/config.ini"),
+        Path("/opt/dns-wui/.env"),
+    ]
+    for c in candidates:
+        if c.exists():
+            return c
+
+    # Default to .env in project root if available, otherwise cwd
+    project_root = Path(__file__).resolve().parent.parent
+    if (project_root / "pyproject.toml").exists():
+        return project_root / ".env"
+    return Path.cwd() / ".env"
+
+
+class IniFileSettingsSource(PydanticBaseSettingsSource):
+    """Configuration source that reads key-value pairs from an INI file."""
+
+    def __init__(self, settings_cls: Type[BaseSettings], ini_path: Path):
+        super().__init__(settings_cls)
+        self.ini_path = ini_path
+
+    def get_field_value(self, field, field_name):
+        return None, field_name, False
+
+    def __call__(self) -> dict[str, Any]:
+        data: dict[str, Any] = {}
+        if self.ini_path and self.ini_path.exists() and self.ini_path.suffix.lower() == ".ini":
+            cp = configparser.ConfigParser()
+            try:
+                cp.read(str(self.ini_path), encoding="utf-8")
+                for sec in cp.sections():
+                    for k, v in cp.items(sec):
+                        k_upper = k.upper()
+                        if k_upper.startswith("DNS_WUI_"):
+                            k_upper = k_upper[8:]
+                        data[k_upper] = v
+            except Exception:
+                pass
+        return data
 
 
 def detect_bind_conf() -> Path:
@@ -33,8 +96,7 @@ def detect_zones_dir() -> Path:
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_prefix="DNS_WUI_",
-        env_file=".env",
+        env_file=str(get_config_file_path()),
         env_file_encoding="utf-8",
         extra="ignore",
     )
@@ -106,6 +168,29 @@ class Settings(BaseSettings):
     OIDC_CLIENT_SECRET: str | None = None
     OIDC_REDIRECT_URI: str | None = None
 
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: Type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> Tuple[PydanticBaseSettingsSource, ...]:
+        cfg_path = get_config_file_path()
+        sources: list[PydanticBaseSettingsSource] = [
+            init_settings,
+            env_settings,
+            EnvSettingsSource(settings_cls, env_prefix="DNS_WUI_"),
+        ]
+        if cfg_path and cfg_path.suffix.lower() == ".ini":
+            sources.append(IniFileSettingsSource(settings_cls, ini_path=cfg_path))
+        else:
+            sources.append(DotEnvSettingsSource(settings_cls, env_file=str(cfg_path)))
+            sources.append(DotEnvSettingsSource(settings_cls, env_file=str(cfg_path), env_prefix="DNS_WUI_"))
+        sources.append(file_secret_settings)
+        return tuple(sources)
+
     def ensure_directories(self) -> None:
         self.DATA_DIR.mkdir(parents=True, exist_ok=True)
         self.ZONES_DIR.mkdir(parents=True, exist_ok=True)
@@ -123,6 +208,13 @@ class Settings(BaseSettings):
             if key == "ZONES_DIR" and self.ZONES_DIR:
                 self.ensure_directories()
 
+    def reload_from_file(self) -> None:
+        """Reload configuration values from active config file (.env or config.ini)."""
+        cfg_path = get_config_file_path()
+        new_settings = Settings(_env_file=str(cfg_path) if cfg_path.exists() else None)
+        for key in type(self).model_fields.keys():
+            object.__setattr__(self, key, getattr(new_settings, key))
+        self.ensure_directories()
+
 
 settings = Settings()
-

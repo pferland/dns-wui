@@ -209,19 +209,19 @@ async def update_system_settings(
     session: AsyncSession = Depends(get_session),
     user: User = Depends(require_role("admin")),
 ):
-    """Save configuration settings to database without applying immediately."""
-    from app.services.settings_service import save_settings_to_db
-    saved = await save_settings_to_db(session, req.settings)
+    """Save configuration settings to active config file (.env or config.ini) without applying immediately."""
+    from app.services.settings_service import save_settings_to_file
+    saved = await save_settings_to_file(req.settings)
 
     await log_audit(
         session=session,
         username=user.username,
         action="SAVE_SETTINGS",
         zone_name=None,
-        details=f"Saved staged settings ({len(saved)} parameters). Pending reload to become active.",
+        details=f"Saved staged settings ({len(saved)} parameters) to config file. Pending reload to become active.",
     )
     return {
-        "message": "Settings saved successfully. Click 'Reload Service & Apply Settings' to make them active.",
+        "message": "Settings saved successfully to config file. Click 'Reload Service & Apply Settings' to make them active.",
         "saved": saved,
     }
 
@@ -231,9 +231,9 @@ async def reload_system_settings(
     session: AsyncSession = Depends(get_session),
     user: User = Depends(require_role("admin")),
 ):
-    """Apply saved settings from database into active runtime and reconfigure BIND daemon if needed."""
+    """Apply saved settings from active config file (.env or config.ini) into active runtime and reconfigure BIND daemon if needed."""
     from app.services.settings_service import apply_saved_settings
-    applied = await apply_saved_settings(session)
+    applied = await apply_saved_settings()
 
     # Reconfig BIND daemon if rndc is available
     rndc_ok, rndc_msg = await rndc_reconfig()
