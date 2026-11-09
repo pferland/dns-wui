@@ -8,7 +8,7 @@ from app.database import get_session
 from app.models.user import User
 from app.models.audit import AuditLog
 from app.models.api_key import ApiKey
-from app.services.security import decode_access_token
+from app.services.security import decode_access_token, verify_oidc_bearer_token
 
 ROLE_HIERARCHY = {
     "admin": 3,
@@ -67,6 +67,47 @@ async def get_current_user_optional(
                 totp_enabled=False,
             )
         return None
+
+    # Handle OIDC Bearer tokens (RS256 JWT from SimpleTessera)
+    if settings.OIDC_ENABLED:
+        oidc_claims = verify_oidc_bearer_token(raw_token)
+        if oidc_claims:
+            username = oidc_claims.get("preferred_username") or oidc_claims.get("username") or oidc_claims.get("client_id") or oidc_claims.get("sub")
+            if username:
+                res = await session.exec(select(User).where(User.username == str(username)))
+                user = res.first()
+                if user:
+                    return user
+            sub = oidc_claims.get("sub")
+            if sub:
+                try:
+                    res = await session.exec(select(User).where(User.id == int(sub)))
+                    user = res.first()
+                    if user:
+                        return user
+                except (ValueError, TypeError):
+                    pass
+
+            token_roles = oidc_claims.get("roles") or oidc_claims.get("groups") or []
+            is_admin = True
+            role = "admin"
+            if isinstance(token_roles, list) and token_roles:
+                if "admin" in token_roles or "Admin" in token_roles:
+                    role = "admin"
+                elif "operator" in token_roles:
+                    role = "operator"
+                elif "viewer" in token_roles:
+                    role = "viewer"
+                    is_admin = False
+
+            return User(
+                id=99999,
+                username=str(username or "oidc_user"),
+                hashed_password="",
+                is_admin=is_admin,
+                role=role,
+                totp_enabled=False,
+            )
 
     # Handle standard JWT tokens
     payload = decode_access_token(raw_token)

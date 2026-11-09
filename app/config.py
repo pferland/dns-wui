@@ -167,6 +167,7 @@ class Settings(BaseSettings):
     OIDC_CLIENT_ID: str | None = None
     OIDC_CLIENT_SECRET: str | None = None
     OIDC_REDIRECT_URI: str | None = None
+    OIDC_ALLOWED_CLIENT_IDS: list[str] = ["dns-wui", "android-homenet-hub"]
 
     @classmethod
     def settings_customise_sources(

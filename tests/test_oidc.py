@@ -126,3 +126,20 @@ async def test_oidc_callback_success_provision_user():
                     audit = res_audit.first()
                     assert audit is not None
                     assert audit.action == "LOGIN_OIDC"
+
+
+@pytest.mark.asyncio
+async def test_oidc_bearer_token_authentication():
+    mock_claims = {
+        "sub": "user-uuid-999",
+        "client_id": "android-homenet-hub",
+        "preferred_username": "android_admin",
+        "iss": "https://auth.randomintervals.com",
+        "roles": ["admin"],
+    }
+    with patch("app.api.deps.verify_oidc_bearer_token", return_value=mock_claims):
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="https://dns-wui.home.randomintervals.com") as client:
+            res = await client.get("/api/v1/zones", headers={"Authorization": "Bearer mock-android-token-xyz"})
+            assert res.status_code == 200
+
